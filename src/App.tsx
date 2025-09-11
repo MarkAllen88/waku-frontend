@@ -572,7 +572,7 @@ function App() {
                     value={newMessage}
                     onChange={updateMessage}
                     onKeyDown={checkForEnter}
-                    placeholder="Input your message"
+                    placeholder="Type your test message here"
                     autoComplete="off"
                     autoCorrect="off"
                   />
