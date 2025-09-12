@@ -17,7 +17,6 @@ import axios from "axios";
 import { Github, Settings, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import logo from "./assets/logo-waku.svg";
 
 interface Message {
   payload: string;         // base64
@@ -110,6 +109,11 @@ function App() {
   const [infoNode, setInfoNode] = useState<InfoResponse>();
   const [health, setHealth] = useState<HealthResponse>();
   const [numPeers, setNumPeers] = useState("");
+  const [numTopics, setNumTopics] = useState("");
+  const [reachability, setReachability] = useState("");
+  const [uptime, setUptime] = useState("");
+  const [messagesSent, setMessagesSent] = useState(0);
+  const [messagesReceived, setMessagesReceived] = useState(0);
   const [fromAsset, setFromAsset] = useState("BTC");
   const [fromAmount, setFromAmount] = useState("");
   const [toAsset, setToAsset] = useState("USDC");
@@ -132,6 +136,12 @@ function App() {
       setJoinedCommunities(parsed);
       console.log("joined communities", parsed);
     }
+
+    // Initialize session stats
+    const sent = parseInt(localStorage.getItem("messagesSent") || "0");
+    const received = parseInt(localStorage.getItem("messagesReceived") || "0");
+    setMessagesSent(sent);
+    setMessagesReceived(received);
   }, []);
 
   useEffect(() => {
@@ -176,6 +186,50 @@ function App() {
     fetchHealth();
   }, [apiEndpoint]);
 
+  // Fetch additional network stats with corrected endpoints
+  useEffect(() => {
+    const fetchNetworkStats = async () => {
+      try {
+        // Get relay subscriptions (pubsub topics)
+        const subscriptionsUrl = `${apiEndpoint}/relay/v1/subscriptions`;
+        const subscriptionsResponse = await axios.get(subscriptionsUrl);
+        console.log("Subscriptions data:", subscriptionsResponse.data);
+        const topicsCount = Array.isArray(subscriptionsResponse.data) ? subscriptionsResponse.data.length : 0;
+        setNumTopics(String(topicsCount));
+      } catch (error) {
+        console.error("Error fetching subscriptions:", error);
+        setNumTopics("0");
+      }
+
+      try {
+        // Check if node is reachable by trying to get peer info
+        const peersUrl = `${apiEndpoint}/admin/v1/peers`;
+        const peersResponse = await axios.get(peersUrl);
+        const peers = Array.isArray(peersResponse.data) ? peersResponse.data : [];
+        // If we have peers, we're likely reachable
+        setReachability(peers.length > 0 ? "Yes" : "No");
+      } catch (error) {
+        console.error("Error checking reachability:", error);
+        setReachability("No");
+      }
+    };
+
+    fetchNetworkStats();
+  }, [apiEndpoint]);
+
+  // Track uptime
+  useEffect(() => {
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const minutes = Math.floor(elapsed / 60000);
+      const seconds = Math.floor((elapsed % 60000) / 1000);
+      setUptime(`${minutes}m ${seconds}s`);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const fetchAllMessages = async () => {
     try {
       if (!joinedCommunities.length) {
@@ -187,11 +241,27 @@ function App() {
         params.append("contentTopics", c.contentTopic);
       }
       params.set("includeData", "true");
+      params.set("ascending", "false"); // Get newest first
+      params.set("pageSize", "100"); // Limit to recent messages
 
       const url = `${apiEndpoint}/store/v1/messages?${params.toString()}`;
       const response = await axios.get<ResponseData>(url);
       console.log("fetchAllMessages data:", response.data);
-      setMessages(response.data.messages || []);
+      const newMessages = response.data.messages || [];
+      
+      // Sort by timestamp (newest first) to ensure proper ordering
+      const sortedMessages = newMessages.sort((a, b) => {
+        const timeA = a.timestamp ? BigInt(a.timestamp) : BigInt(0);
+        const timeB = b.timestamp ? BigInt(b.timestamp) : BigInt(0);
+        return Number(timeB - timeA); // Newest first
+      });
+      
+      setMessages(sortedMessages);
+      
+      // Update received count
+      const received = sortedMessages.length;
+      setMessagesReceived(received);
+      localStorage.setItem("messagesReceived", received.toString());
     } catch (error) {
       console.error("Error fetching all messages:", error);
     }
@@ -237,7 +307,7 @@ function App() {
       return;
     }
 
-    // Fix: Use proper content topic format
+    // FIXED: Use proper content topic format matching swap.veri.lol
     let contentTopic: string;
     if (name === "swap-offers") {
       contentTopic = "/swap-offers/1/offer/proto";
@@ -285,8 +355,6 @@ function App() {
     }
   };
 
-  // FIX: Send a single WakuMessage body to /relay/v1/auto/messages (not { messages: […] })
-  // Also omit timestamp to avoid deserialization issues on some nodes; the node can set it.
   const sendMessage = async (customMessage?: string) => {
     if (!community) {
       toast.error("No community selected");
@@ -314,7 +382,16 @@ function App() {
       if (!customMessage) {
         setNewMessage("");
       }
+      
+      // Update sent count
+      const newSent = messagesSent + 1;
+      setMessagesSent(newSent);
+      localStorage.setItem("messagesSent", newSent.toString());
+      
       toast.success("Message sent");
+      
+      // Refresh messages after sending to see the new message
+      setTimeout(() => fetchAllMessages(), 1000);
     } catch (error: any) {
       console.error(
         "Error sending message:",
@@ -365,24 +442,24 @@ function App() {
       try {
         const offer = JSON.parse(payloadText);
         return (
-          <li key={index}>
+          <li key={index} className="text-gray-200">
             From: {offer.fromAsset} {offer.fromAmount} To: {offer.toAsset} {offer.toAmount}{" "}
-            <span className="text-gray-500 text-xs">{formatDate(msg.timestamp)}</span>
+            <span className="text-gray-400 text-xs">{formatDate(msg.timestamp)}</span>
           </li>
         );
       } catch {
         return (
-          <li key={index}>
+          <li key={index} className="text-gray-200">
             Invalid offer (hex): {rawBytes ? toHexBytes(rawBytes) : "N/A"}{" "}
-            <span className="text-gray-500 text-xs">{formatDate(msg.timestamp)}</span>
+            <span className="text-gray-400 text-xs">{formatDate(msg.timestamp)}</span>
           </li>
         );
       }
     }
 
     return (
-      <li key={index}>
-        {payloadText} <span className="text-gray-500 text-xs">{formatDate(msg.timestamp)}</span>
+      <li key={index} className="text-gray-200">
+        {payloadText} <span className="text-gray-400 text-xs">{formatDate(msg.timestamp)}</span>
       </li>
     );
   };
@@ -390,7 +467,7 @@ function App() {
   const logoImage = () => {
     return (
       <div className="flex flex-row items-center gap-2">
-        <img src={logo} className="logo w-16" alt="Waku logo" />
+        <div className="text-6xl">🚀</div>
       </div>
     );
   };
@@ -399,14 +476,14 @@ function App() {
     return (
       <Dialog>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" className="text-gray-200 hover:bg-gray-700">
             <Settings />
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-gray-800 text-gray-200 border-gray-700">
           <DialogHeader>
-            <DialogTitle>Settings</DialogTitle>
-            <DialogDescription>Configure the API endpoint</DialogDescription>
+            <DialogTitle className="text-gray-200">Settings</DialogTitle>
+            <DialogDescription className="text-gray-400">Configure the API endpoint</DialogDescription>
           </DialogHeader>
           <div className="flex items-center space-x-2">
             <div className="grid flex-1 gap-2">
@@ -417,12 +494,13 @@ function App() {
                 id="endpoint"
                 value={apiEndpoint}
                 onChange={(e) => setApiEndpoint(e.target.value)}
+                className="bg-gray-700 text-gray-200 border-gray-600"
               />
             </div>
           </div>
           <DialogFooter className="sm:justify-start">
             <DialogClose asChild>
-              <Button type="button" variant="secondary">
+              <Button type="button" variant="secondary" className="bg-gray-700 text-gray-200 hover:bg-gray-600">
                 Close
               </Button>
             </DialogClose>
@@ -441,13 +519,14 @@ function App() {
           placeholder="Input the community name"
           autoComplete="off"
           autoCorrect="off"
+          className="bg-gray-700 text-gray-200 border-gray-600 placeholder-gray-400"
         />
 
-        <Label className="text-gray-500">
+        <Label className="text-gray-400">
           For example: <span className="underline">waku</span>
         </Label>
 
-        <Button className="w-50" onClick={() => createCommunity(communityName)}>
+        <Button className="w-50 bg-blue-600 hover:bg-blue-700" onClick={() => createCommunity(communityName)}>
           Join Community
         </Button>
       </div>
@@ -466,29 +545,54 @@ function App() {
     }
   };
 
+  const getHealthIndicator = () => {
+    if (!health) return "🔴"; // No health data
+    
+    const nodeHealth = health.nodeHealth?.toLowerCase().trim();
+    
+    // Check for various possible "healthy" states
+    if (nodeHealth === "ready" ||
+        nodeHealth === "ok" ||
+        nodeHealth === "healthy" ||
+        nodeHealth === "up") {
+      return "🟢";
+    }
+    
+    return "🔴";
+  };
+
+  const statusBar = () => {
+    return (
+      <div className="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 p-4">
+        <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-300">
+          <Label className="text-xs">
+            Health: {getHealthIndicator()}
+          </Label>
+          <Label className="text-xs">Nwaku: {nwakuVersion}</Label>
+          <Label className="text-xs">Peers: {numPeers}</Label>
+          <Label className="text-xs">Topics: {numTopics}</Label>
+          <Label className="text-xs">Reachable: {reachability}</Label>
+          <Label className="text-xs">Uptime: {uptime}</Label>
+          <Label className="text-xs">Sent: {messagesSent}</Label>
+          <Label className="text-xs">Received: {messagesReceived}</Label>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div>
+    <div className="pb-20 bg-gray-900 min-h-screen text-gray-200">
       <div className="absolute right-36 top-16">
-        <Label className="text-md">Hello, {username}</Label>
+        <Label className="text-md text-gray-200">Hello, {username}</Label>
       </div>
 
       <div className="absolute right-24 top-16">
         <a href="https://github.com/waku-org/waku-frontend" target="_blank">
-          <Github />
+          <Github className="text-gray-200 hover:text-gray-400" />
         </a>
       </div>
 
       <div className="absolute right-16 top-16">{settingsDialog()}</div>
-
-      <div className="absolute left-16 top-16 flex flex-col">
-        <Label className="text-md">
-          Health: {health?.nodeHealth === "Ready" ? "🟢" : "🔴"}
-        </Label>
-        <Label className="text-md">Nwaku Version: {nwakuVersion}</Label>
-        <Label className="text-md">Number of Peers: {numPeers}</Label>
-        <Label className="text-md">Multiaddress: {infoNode?.listenAddresses}</Label>
-        {/*<Label className="text-md">ENR: {infoNode?.enrUri}</Label>*/}
-      </div>
 
       {!username && (
         <div className="flex flex-col gap-5 items-center justify-center h-screen mt-[-60px]">
@@ -500,8 +604,9 @@ function App() {
               placeholder="Enter your username"
               autoComplete="off"
               autoCorrect="off"
+              className="bg-gray-700 text-gray-200 border-gray-600 placeholder-gray-400"
             />
-            <Button className="w-32" onClick={createUser}>
+            <Button className="w-32 bg-blue-600 hover:bg-blue-700" onClick={createUser}>
               Create
             </Button>
           </div>
@@ -519,19 +624,19 @@ function App() {
         <div className="flex md:flex-row flex-col h-screen items-center justify-center gap-10">
           <div className="flex flex-col gap-8 mt-36 md:mt-0">
             <div>
-              <h1 className="text-xl font-bold mb-2">Communities</h1>
+              <h1 className="text-xl font-bold mb-2 text-gray-200">Communities</h1>
               <ul>
                 {joinedCommunities.map((item, index) => (
-                  <li key={index} onClick={() => selectCommunity(index)}>
+                  <li key={index} onClick={() => selectCommunity(index)} className="cursor-pointer">
                     <div className="flex flex-row items-center gap-1">
                       <Label
-                        className={
-                          item.name === community?.name ? "bg-green-200" : ""
-                        }
+                        className={`cursor-pointer px-2 py-1 rounded ${
+                          item.name === community?.name ? "bg-green-600" : "hover:bg-gray-700"
+                        } text-gray-200`}
                       >
                         {item.name}
                       </Label>
-                      <X size={18} onClick={deleteCommunity(index)} />
+                      <X size={18} onClick={deleteCommunity(index)} className="text-gray-400 hover:text-red-400 cursor-pointer" />
                     </div>
                   </li>
                 ))}
@@ -549,15 +654,14 @@ function App() {
                     console.log("Rendering swap form");
                     return (
                       <div className="flex flex-col gap-4 w-full max-w-sm">
-                        <Label>From</Label>
+                        <Label className="text-gray-200">From</Label>
                         <Select value={fromAsset} onValueChange={setFromAsset}>
-                          <SelectTrigger>
+                          <SelectTrigger className="bg-gray-700 text-gray-200 border-gray-600">
                             <SelectValue placeholder="Select asset" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="bg-gray-700 text-gray-200 border-gray-600">
                             <SelectItem value="BTC">Bitcoin (BTC)</SelectItem>
                             <SelectItem value="USDC">USDC (USDC)</SelectItem>
-                            {/* Add more assets as needed */}
                           </SelectContent>
                         </Select>
                         <Input
@@ -565,16 +669,16 @@ function App() {
                           value={fromAmount}
                           onChange={(e) => setFromAmount(e.target.value)}
                           placeholder="0.0"
+                          className="bg-gray-700 text-gray-200 border-gray-600 placeholder-gray-400"
                         />
-                        <Label>To</Label>
+                        <Label className="text-gray-200">To</Label>
                         <Select value={toAsset} onValueChange={setToAsset}>
-                          <SelectTrigger>
+                          <SelectTrigger className="bg-gray-700 text-gray-200 border-gray-600">
                             <SelectValue placeholder="Select asset" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="bg-gray-700 text-gray-200 border-gray-600">
                             <SelectItem value="BTC">Bitcoin (BTC)</SelectItem>
                             <SelectItem value="USDC">USDC (USDC)</SelectItem>
-                            {/* Add more assets as needed */}
                           </SelectContent>
                         </Select>
                         <Input
@@ -582,8 +686,9 @@ function App() {
                           value={toAmount}
                           onChange={(e) => setToAmount(e.target.value)}
                           placeholder="0.0"
+                          className="bg-gray-700 text-gray-200 border-gray-600 placeholder-gray-400"
                         />
-                        <Button onClick={sendSwapOffer}>Send Offer</Button>
+                        <Button onClick={sendSwapOffer} className="bg-blue-600 hover:bg-blue-700">Send Offer</Button>
                       </div>
                     );
                   })()
@@ -599,8 +704,9 @@ function App() {
                           placeholder="Type your message here"
                           autoComplete="off"
                           autoCorrect="off"
+                          className="bg-gray-700 text-gray-200 border-gray-600 placeholder-gray-400"
                         />
-                        <Button className="w-32" onClick={() => sendMessage()}>
+                        <Button className="w-32 bg-blue-600 hover:bg-blue-700" onClick={() => sendMessage()}>
                           Send
                         </Button>
                       </div>
@@ -609,12 +715,12 @@ function App() {
                 )}
 
                 <div>
-                  <h1 className="text-xl font-bold mb-2">Message History</h1>
-                  <Button variant="outline" onClick={fetchAllMessages}>
+                  <h1 className="text-xl font-bold mb-2 text-gray-200">Message History</h1>
+                  <Button variant="outline" onClick={fetchAllMessages} className="mb-2 bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600">
                     Refresh
                   </Button>
-                  <ScrollArea className="h-[300px] md:w-[650px] rounded-md border p-4 bg-gray-100">
-                    <ul className="text-sm flex flex-col gap-1">
+                  <ScrollArea className="h-[300px] md:w-[650px] rounded-md border border-gray-600 p-4 bg-gray-800">
+                    <ul className="text-sm flex flex-col-reverse gap-1">
                       {messages
                         .filter((msg) => msg.contentTopic === community.contentTopic)
                         .map((msg, index) => decodeMsg(index, msg))}
@@ -626,6 +732,8 @@ function App() {
           </div>
         </div>
       )}
+
+      {statusBar()}
     </div>
   );
 }
