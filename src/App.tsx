@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import axios from "axios";
 import { Github, Settings, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -19,9 +20,11 @@ import { toast } from "sonner";
 import logo from "./assets/logo-waku.svg";
 
 interface Message {
-  payload: string;
+  payload: string;         // base64
   contentTopic: string;
-  timestamp: number;
+  timestamp?: string;      // nanoseconds since epoch as string (uint64)
+  meta?: string;           // base64
+  version?: number;
 }
 
 interface Cursor {
@@ -59,21 +62,36 @@ interface HealthResponse {
 }
 
 const SERVICE_ENDPOINT = import.meta.env.VITE_API_ENDPOINT || "http://localhost:8645";
-const COMMUNITY_CONTENT_TOPIC_PREFIX = "/universal/1/community";
 
+// Simple central error handler
 export function handleError(error: any): void {
   let message: string;
-
   if (error.response) {
-      message = `Error: ${error.response.status}\nMessage: ${error.response.data}`;
+    message = `Error: ${error.response.status}\nMessage: ${JSON.stringify(error.response.data)}`;
   } else if (error.request) {
-      message = 'Error: No response received from server';
+    message = "Error: No response received from server";
   } else {
-      message = `Error: ${error.message}`;
+    message = `Error: ${error.message}`;
   }
-
   alert(message);
 }
+
+// UTF-8 safe base64 helpers
+const bytesFromBase64 = (b64: string): Uint8Array =>
+  Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+const base64FromBytes = (bytes: Uint8Array): string => {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+};
+const encodeBase64Utf8 = (text: string): string => {
+  const bytes = new TextEncoder().encode(text);
+  return base64FromBytes(bytes);
+};
+const decodeBase64Utf8 = (b64: string): string => {
+  const bytes = bytesFromBase64(b64);
+  return new TextDecoder().decode(bytes);
+};
 
 function App() {
   const [newMessage, setNewMessage] = useState("");
@@ -91,7 +109,11 @@ function App() {
   const [nwakuVersion, setNwakuVersion] = useState("");
   const [infoNode, setInfoNode] = useState<InfoResponse>();
   const [health, setHealth] = useState<HealthResponse>();
-  const [numPeers, setNumPeers] = useState("")
+  const [numPeers, setNumPeers] = useState("");
+  const [fromAsset, setFromAsset] = useState("BTC");
+  const [fromAmount, setFromAmount] = useState("");
+  const [toAsset, setToAsset] = useState("USDC");
+  const [toAmount, setToAmount] = useState("");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateMessage = (e: any) => setNewMessage(e.target.value);
@@ -115,334 +137,293 @@ function App() {
   useEffect(() => {
     const fetchNwakuVersion = async () => {
       try {
-        let url = `${apiEndpoint}/debug/v1/version`;
+        const url = `${apiEndpoint}/debug/v1/version`;
         const response = await axios.get(url);
         console.log("fetchNwakuVersion data:", response.data);
         setNwakuVersion(response.data);
       } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("Error fetching version:", error);
       }
     };
-    
-    fetchNwakuVersion()
-
+    fetchNwakuVersion();
   }, [apiEndpoint]);
 
   useEffect(() => {
     const fetchInfoNode = async () => {
       try {
-        let url = `${apiEndpoint}/debug/v1/info`;
+        const url = `${apiEndpoint}/debug/v1/info`;
         const response = await axios.get<InfoResponse>(url);
         console.log("fetchInfoNode data:", response.data);
         setInfoNode(response.data);
       } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("Error fetching node info:", error);
       }
     };
-    
-    fetchInfoNode()
-
+    fetchInfoNode();
   }, [apiEndpoint]);
 
   useEffect(() => {
     const fetchHealth = async () => {
       try {
-        let url = `${apiEndpoint}/health`;
+        const url = `${apiEndpoint}/health`;
         const response = await axios.get<HealthResponse>(url);
         console.log("fetchHealth data:", response.data);
         setHealth(response.data);
       } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("Error fetching health:", error);
       }
     };
-    
-    fetchHealth()
-
+    fetchHealth();
   }, [apiEndpoint]);
 
+  const fetchAllMessages = async () => {
+    try {
+      if (!joinedCommunities.length) {
+        setMessages([]);
+        return;
+      }
+      const params = new URLSearchParams();
+      for (const c of joinedCommunities) {
+        params.append("contentTopics", c.contentTopic);
+      }
+      params.set("includeData", "true");
+
+      const url = `${apiEndpoint}/store/v1/messages?${params.toString()}`;
+      const response = await axios.get<ResponseData>(url);
+      console.log("fetchAllMessages data:", response.data);
+      setMessages(response.data.messages || []);
+    } catch (error) {
+      console.error("Error fetching all messages:", error);
+    }
+  };
+
   useEffect(() => {
-    const fetchAllMessages = async () => {
-      try {
-        const joinedContentTopics = joinedCommunities
-          .map(
-            (c: CommunityMetadata) =>
-              `${COMMUNITY_CONTENT_TOPIC_PREFIX}/${c.contentTopic}`
-          )
-          .join(",");
-
-        if (joinedContentTopics === "") {
-          return;
-        }
-
-        let url = `${apiEndpoint}/store/v3/messages?contentTopics=${encodeURIComponent(joinedContentTopics)}&ascending=false&pageSize=300&includeData=true`;
-        const response = await axios.get(url);
-        console.log("Data:", response.data);
-
-        const parsedResponse = response.data.messages.map((obj: MessageData) => obj.message);
-        
-        setMessages((prev) => {
-          const filtered = parsedResponse.filter((msg: Message) => {
-            const found = prev.find(
-              (item) =>
-                item.payload === msg.payload &&
-                item.timestamp === msg.timestamp &&
-                item.contentTopic === msg.contentTopic
-            );
-            return !found;
-          });
-
-          const result = [...prev, ...filtered].sort(
-            (a: Message, b: Message) => b.timestamp - a.timestamp
-          );
-          return result;
-        });
-
-        handleCursor(url, response.data);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-      }
-    };
-
-    const fetchNumPeers = async () => {
-      try{
-        let url = `${apiEndpoint}/admin/v1/peers`;
-        const response = await axios.get(url);
-        console.log("getNumPeers data:", response.data);
-        setNumPeers(response.data.length)
-        console.log(`there are ${response.data.length} peers`)
-      } catch (error) {
-        console.error("Error fetching data:", error);
-      }
-    }
-    
-    const handleCursor = async (baseUrl: string, data: ResponseData) => {
-      if (data.cursor) {
-        const url = `${baseUrl}&pubsubTopic=${data.cursor.pubsub_topic}&digest=${data.cursor.digest.data}&senderTime=${data.cursor.sender_time}&storeTime=${data.cursor.store_time}`;
-
-        const response = await axios.get(url);
-        setMessages((prev) => {
-          const filtered = response.data.messages.filter((msg: Message) => {
-            const found = prev.find(
-              (item) =>
-                item.payload === msg.payload &&
-                item.timestamp === msg.timestamp &&
-                item.contentTopic === msg.contentTopic
-            );
-            return !found;
-          });
-
-          const result = [...prev, ...filtered].sort(
-            (a: Message, b: Message) => b.timestamp - a.timestamp
-          );
-          return result;
-        });
-        handleCursor(baseUrl, response.data);
-      }
-    };
-
-    fetchAllMessages()
-    fetchNumPeers()
-    
-    const intervalId = setInterval(fetchAllMessages, 2000); // Trigger fetchData every 2 seconds
-    const intervalId2 = setInterval(fetchNumPeers, 10000); // Trigger fetchNumPeers every 10 seconds
-
-    return () => {
-      clearInterval(intervalId);
-      clearInterval(intervalId2);
-    }
+    fetchAllMessages();
   }, [joinedCommunities, apiEndpoint]);
 
-  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+  useEffect(() => {
+    const fetchNumPeers = async () => {
+      try {
+        const url = `${apiEndpoint}/admin/v1/peers`;
+        const response = await axios.get(url);
+        console.log("fetchNumPeers data:", response.data);
+        const count = Array.isArray(response.data) ? response.data.length : (response.data?.length ?? 0);
+        setNumPeers(String(count));
+      } catch (error) {
+        console.error("Error fetching peers:", error);
+      }
+    };
+    fetchNumPeers();
+  }, [apiEndpoint]);
 
-  const CreateUser = async (name: string) => {
-    console.log("creating user");
-    localStorage.setItem("username", name);
-    return name;
+  const createUser = () => {
+    if (usernameInput) {
+      localStorage.setItem("username", usernameInput);
+      setUsername(usernameInput);
+    }
   };
 
   const GetUser = () => {
     const name = localStorage.getItem("username");
-    return name || "";
-  };
-
-  const Send = async (content: string) => {
-    console.log("sending message", content);
-    const payload = {
-      content: content,
-      name: username,
-      timestamp: Math.floor(Date.now() / 1000),
-    };
-
-    const bytes = btoa(JSON.stringify(payload));
-
-    const message = {
-      payload: bytes,
-      contentTopic: `${COMMUNITY_CONTENT_TOPIC_PREFIX}/${
-        community!.contentTopic
-      }`,
-    };
-
-    try{
-      const response = await axios.post(
-        `${apiEndpoint}/relay/v1/auto/messages`,
-        JSON.stringify(message),
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      return response.data;
-    } catch (error) {
-      handleError(error);
+    if (name) {
+      return name;
     }
+    return "";
   };
 
-  const sendMessage = async () => {
-    if (!username || !newMessage) {
-      toast.warning("Username or message is empty.");
+  const createCommunity = async (name: string) => {
+    if (name === "") {
+      toast.error("Community name is empty");
       return;
     }
-    try {
-      let result = await Send(newMessage);
-      console.log("result", result);
-      setNewMessage("");
-    } catch (err) {
-      toast.error(`Error happens: ${err}`);
-    }
-  };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const checkForEnter = (e: any) => {
-    if (e.key === 'Enter') {
-      sendMessage()
-    }
-  }
-
-  const createUser = async () => {
-    try {
-      const name = await CreateUser(usernameInput);
-      setUsername(name);
-      toast("User has been created.");
-    } catch (err) {
-      toast.error(`Error happens: ${err}`);
-    }
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const updateCommunityName = (e: any) => setCommunityName(e.target.value);
-
-  const createCommunity = (name: string) => {
-    const metadata: CommunityMetadata = {
-      name: name,
-      contentTopic: name,
-    };
-
-    const communities = localStorage.getItem("communities");
-    if (communities) {
-      const parsed = JSON.parse(communities);
-      if (parsed.find((item: CommunityMetadata) => item.name === name)) {
-        toast.warning("Community already exists.");
-        return;
-      }
-      parsed.push(metadata);
-      localStorage.setItem("communities", JSON.stringify(parsed));
-      setJoinedCommunities(parsed);
+    // Fix: Use proper content topic format
+    let contentTopic: string;
+    if (name === "swap-offers") {
+      contentTopic = "/swap-offers/1/offer/proto";
     } else {
-      localStorage.setItem("communities", JSON.stringify([metadata]));
-      setJoinedCommunities([metadata]);
+      // Use the correct 4-part format: /<application>/<version>/<topic-name>/<encoding>
+      contentTopic = `/waku/1/${name}/proto`;
     }
+    
+    const payload: CommunityMetadata = { name, contentTopic };
 
-    setCommunity(metadata);
-    localStorage.setItem("community", JSON.stringify(metadata));
+    // Avoid duplicates
+    const exists = joinedCommunities.some((c) => c.contentTopic === payload.contentTopic);
+    const joined = exists ? joinedCommunities : [...joinedCommunities, payload];
+
+    setJoinedCommunities(joined);
+    localStorage.setItem("communities", JSON.stringify(joined));
+    setCommunity(payload);
+    localStorage.setItem("community", JSON.stringify(payload));
     setCommunityName("");
-
-    return metadata;
   };
 
-  const deleteCommunity = (index: number) => () => {
-    const communities = localStorage.getItem("communities");
-    if (communities) {
-      const parsed = JSON.parse(communities);
-      parsed.splice(index, 1);
-      localStorage.setItem("communities", JSON.stringify(parsed));
-      setJoinedCommunities(parsed);
-      console.log("delete community", parsed);
+  const selectCommunity = (index: number) => {
+    const selected = joinedCommunities[index];
+    setCommunity(selected);
+    localStorage.setItem("community", JSON.stringify(selected));
+  };
+
+  const deleteCommunity = (index: number) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const joined = joinedCommunities.filter((_, i) => i !== index);
+    setJoinedCommunities(joined);
+    localStorage.setItem("communities", JSON.stringify(joined));
+    if (joined.length > 0) {
+      setCommunity(joined[0]);
+      localStorage.setItem("community", JSON.stringify(joined[0]));
+    } else {
       setCommunity(undefined);
       localStorage.removeItem("community");
     }
   };
 
-  const selectCommunity = (index: number) => {
-    console.log("select community", joinedCommunities[index]);
-    setCommunity(joinedCommunities[index]);
-    localStorage.setItem("community", JSON.stringify(joinedCommunities[index]));
+  const checkForEnter = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      sendMessage();
+    }
   };
 
-  const decodeMsg = (index: number, msg: Message) => {
-    try {
-      if (
-        msg.contentTopic !==
-        `${COMMUNITY_CONTENT_TOPIC_PREFIX}/${community?.contentTopic}`
-      ) {
-        return;
-      }
-      const formtMsg = JSON.parse(atob(msg.payload));
-
-      return (
-        <li key={index} className="mb-1">
-          <div className="flex flex-row justify-between gap-2">
-            <Label>
-              <span
-                className={
-                  formtMsg.name == username ? "bg-green-200" : "bg-gray-300"
-                }
-              >
-                {formtMsg.name}:
-              </span>{" "}
-              {formtMsg.content}
-            </Label>
-            <Label>{formatDate(formtMsg.timestamp)}</Label>
-          </div>
-        </li>
-      );
-    } catch (err) {
-      console.log("decode message error", msg, err);
+  // FIX: Send a single WakuMessage body to /relay/v1/auto/messages (not { messages: […] })
+  // Also omit timestamp to avoid deserialization issues on some nodes; the node can set it.
+  const sendMessage = async (customMessage?: string) => {
+    if (!community) {
+      toast.error("No community selected");
+      return;
     }
+    const text = (customMessage ?? `${username || "Anonymous"}: ${newMessage}`).trim();
+    if (!text) {
+      toast.error("Message cannot be empty");
+      return;
+    }
+
+    const url = `${apiEndpoint}/relay/v1/auto/messages`;
+    const data: Message = {
+      payload: encodeBase64Utf8(text),
+      contentTopic: community.contentTopic,
+      // timestamp intentionally omitted; node will populate
+    };
+
+    try {
+      console.log("Attempting to send message with data:", data);
+      const response = await axios.post(url, data, {
+        headers: { "Content-Type": "application/json" },
+      });
+      console.log("sendMessage response:", response?.status, response?.data);
+      if (!customMessage) {
+        setNewMessage("");
+      }
+      toast.success("Message sent");
+    } catch (error: any) {
+      console.error(
+        "Error sending message:",
+        error,
+        "Server response:",
+        error?.response?.data
+      );
+      toast.error(
+        `Error sending message: ${error?.response?.status || ""} ${error?.response?.data ? JSON.stringify(error.response.data) : ""}`
+      );
+    }
+  };
+
+  const sendSwapOffer = () => {
+    if (!fromAmount || !toAmount) {
+      toast.error("Amounts are required");
+      return;
+    }
+    const offer = {
+      fromAsset,
+      fromAmount: parseFloat(fromAmount),
+      toAsset,
+      toAmount: parseFloat(toAmount),
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+    sendMessage(JSON.stringify(offer));
+    setFromAmount("");
+    setToAmount("");
+  };
+
+  const toHexBytes = (bytes: Uint8Array) =>
+    Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(" ");
+
+  const decodeMsg = (index: number, msg: Message) => {
+    let payloadText = "";
+    let rawBytes: Uint8Array | undefined;
+
+    try {
+      rawBytes = bytesFromBase64(msg.payload);
+      payloadText = new TextDecoder().decode(rawBytes);
+    } catch {
+      payloadText = "(unable to decode payload)";
+    }
+
+    if (msg.contentTopic.includes("swap-offers")) {
+      try {
+        const offer = JSON.parse(payloadText);
+        return (
+          <li key={index}>
+            From: {offer.fromAsset} {offer.fromAmount} To: {offer.toAsset} {offer.toAmount}{" "}
+            <span className="text-gray-500 text-xs">{formatDate(msg.timestamp)}</span>
+          </li>
+        );
+      } catch {
+        return (
+          <li key={index}>
+            Invalid offer (hex): {rawBytes ? toHexBytes(rawBytes) : "N/A"}{" "}
+            <span className="text-gray-500 text-xs">{formatDate(msg.timestamp)}</span>
+          </li>
+        );
+      }
+    }
+
+    return (
+      <li key={index}>
+        {payloadText} <span className="text-gray-500 text-xs">{formatDate(msg.timestamp)}</span>
+      </li>
+    );
+  };
+
+  const logoImage = () => {
+    return (
+      <div className="flex flex-row items-center gap-2">
+        <img src={logo} className="logo w-16" alt="Waku logo" />
+      </div>
+    );
   };
 
   const settingsDialog = () => {
     return (
       <Dialog>
         <DialogTrigger asChild>
-          <Settings />
+          <Button variant="ghost" size="icon">
+            <Settings />
+          </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Settings</DialogTitle>
-            <DialogDescription>
-              Make changes to your settings here. Click save when you're done.
-            </DialogDescription>
+            <DialogDescription>Configure the API endpoint</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="name" className="text-right">
-                REST API
+          <div className="flex items-center space-x-2">
+            <div className="grid flex-1 gap-2">
+              <Label htmlFor="endpoint" className="sr-only">
+                Endpoint
               </Label>
               <Input
-                id="name"
+                id="endpoint"
+                value={apiEndpoint}
                 onChange={(e) => setApiEndpoint(e.target.value)}
-                autoComplete="off"
-                autoCorrect="off"
-                defaultValue={apiEndpoint}
-                className="col-span-3"
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="sm:justify-start">
             <DialogClose asChild>
-              <Button type="submit">
-                Save
+              <Button type="button" variant="secondary">
+                Close
               </Button>
             </DialogClose>
           </DialogFooter>
@@ -451,25 +432,12 @@ function App() {
     );
   };
 
-  const logoImage = () => {
-    return (
-      <img
-        height={100}
-        width={100}
-        src={logo}
-        alt="logo"
-        className="rounded-2xl"
-      />
-    );
-  };
-
   const createCommunityDialog = () => {
     return (
-      <div className="flex flex-col items-center gap-3">
+      <div className="flex flex-col gap-4 items-center">
         <Input
-          className="w-[200px]"
           value={communityName}
-          onChange={updateCommunityName}
+          onChange={(e) => setCommunityName(e.target.value)}
           placeholder="Input the community name"
           autoComplete="off"
           autoCorrect="off"
@@ -486,9 +454,16 @@ function App() {
     );
   };
 
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleString();
+  const formatDate = (timestamp?: string) => {
+    try {
+      if (!timestamp) return "";
+      const ns = BigInt(timestamp);
+      const ms = Number(ns / 1000000n);
+      const date = new Date(ms);
+      return date.toLocaleString();
+    } catch {
+      return "";
+    }
   };
 
   return (
@@ -506,13 +481,15 @@ function App() {
       <div className="absolute right-16 top-16">{settingsDialog()}</div>
 
       <div className="absolute left-16 top-16 flex flex-col">
-        <Label className="text-md">Health: {health?.nodeHealth === "Ready" ? "🟢" : "🔴"}</Label>
+        <Label className="text-md">
+          Health: {health?.nodeHealth === "Ready" ? "🟢" : "🔴"}
+        </Label>
         <Label className="text-md">Nwaku Version: {nwakuVersion}</Label>
         <Label className="text-md">Number of Peers: {numPeers}</Label>
         <Label className="text-md">Multiaddress: {infoNode?.listenAddresses}</Label>
         {/*<Label className="text-md">ENR: {infoNode?.enrUri}</Label>*/}
       </div>
-      
+
       {!username && (
         <div className="flex flex-col gap-5 items-center justify-center h-screen mt-[-60px]">
           {logoImage()}
@@ -531,7 +508,7 @@ function App() {
         </div>
       )}
 
-      {username && joinedCommunities.length == 0 && (
+      {username && joinedCommunities.length === 0 && (
         <div className="flex flex-col gap-5 items-center justify-center h-screen mt-[-60px]">
           {logoImage()}
           {createCommunityDialog()}
@@ -549,7 +526,7 @@ function App() {
                     <div className="flex flex-row items-center gap-1">
                       <Label
                         className={
-                          item.name == community?.name ? "bg-green-200" : ""
+                          item.name === community?.name ? "bg-green-200" : ""
                         }
                       >
                         {item.name}
@@ -567,25 +544,80 @@ function App() {
             {logoImage()}
             {community && (
               <div className="flex flex-col gap-10 items-center">
-                <div className="flex w-full max-w-sm items-center space-x-2">
-                  <Input
-                    value={newMessage}
-                    onChange={updateMessage}
-                    onKeyDown={checkForEnter}
-                    placeholder="Type your test message here"
-                    autoComplete="off"
-                    autoCorrect="off"
-                  />
-                  <Button className="w-32" onClick={sendMessage}>
-                    Send
-                  </Button>
-                </div>
+                {community.name === "swap-offers" ? (
+                  (() => {
+                    console.log("Rendering swap form");
+                    return (
+                      <div className="flex flex-col gap-4 w-full max-w-sm">
+                        <Label>From</Label>
+                        <Select value={fromAsset} onValueChange={setFromAsset}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select asset" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="BTC">Bitcoin (BTC)</SelectItem>
+                            <SelectItem value="USDC">USDC (USDC)</SelectItem>
+                            {/* Add more assets as needed */}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          value={fromAmount}
+                          onChange={(e) => setFromAmount(e.target.value)}
+                          placeholder="0.0"
+                        />
+                        <Label>To</Label>
+                        <Select value={toAsset} onValueChange={setToAsset}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select asset" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="BTC">Bitcoin (BTC)</SelectItem>
+                            <SelectItem value="USDC">USDC (USDC)</SelectItem>
+                            {/* Add more assets as needed */}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          value={toAmount}
+                          onChange={(e) => setToAmount(e.target.value)}
+                          placeholder="0.0"
+                        />
+                        <Button onClick={sendSwapOffer}>Send Offer</Button>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  (() => {
+                    console.log("Rendering text input");
+                    return (
+                      <div className="flex w-full max-w-sm items-center space-x-2">
+                        <Input
+                          value={newMessage}
+                          onChange={updateMessage}
+                          onKeyDown={checkForEnter}
+                          placeholder="Type your message here"
+                          autoComplete="off"
+                          autoCorrect="off"
+                        />
+                        <Button className="w-32" onClick={() => sendMessage()}>
+                          Send
+                        </Button>
+                      </div>
+                    );
+                  })()
+                )}
 
                 <div>
                   <h1 className="text-xl font-bold mb-2">Message History</h1>
+                  <Button variant="outline" onClick={fetchAllMessages}>
+                    Refresh
+                  </Button>
                   <ScrollArea className="h-[300px] md:w-[650px] rounded-md border p-4 bg-gray-100">
                     <ul className="text-sm flex flex-col gap-1">
-                      {messages.map((msg, index) => decodeMsg(index, msg))}
+                      {messages
+                        .filter((msg) => msg.contentTopic === community.contentTopic)
+                        .map((msg, index) => decodeMsg(index, msg))}
                     </ul>
                   </ScrollArea>
                 </div>
@@ -599,3 +631,4 @@ function App() {
 }
 
 export default App;
+
