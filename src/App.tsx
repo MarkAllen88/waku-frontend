@@ -86,60 +86,122 @@ const formatDate = (timestamp?: string) => {
   }
 };
 
-// Hoisted components with proper typing
+// Scrolling Price Bar Component with CSS-in-JS fix
 type PriceBarProps = { priceData: PriceData };
 const PriceBar = React.memo(({ priceData }: PriceBarProps) => (
-  <div className="fixed top-0 left-0 right-0 bg-gray-800 border-b border-gray-700 p-3 z-40">
-    <div className="flex justify-center gap-6">
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-orange-500 rounded-full" />
-          <span className="text-white font-medium text-sm">Bitcoin</span>
-        </div>
-        <div className="text-white font-bold">${formatPrice(priceData.bitcoin?.usd)}</div>
-        <div className={`flex items-center gap-1 ${(priceData.bitcoin?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          {(priceData.bitcoin?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-          <span className="text-xs">{formatChange(priceData.bitcoin?.usd_24h_change)}%</span>
-        </div>
-      </div>
-      
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-gray-400 rounded-full" />
-          <span className="text-white font-medium text-sm">Ethereum</span>
-        </div>
-        <div className="text-white font-bold">${formatPrice(priceData.ethereum?.usd)}</div>
-        <div className={`flex items-center gap-1 ${(priceData.ethereum?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          {(priceData.ethereum?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-          <span className="text-xs">{formatChange(priceData.ethereum?.usd_24h_change)}%</span>
-        </div>
-      </div>
-      
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-blue-500 rounded-full" />
-          <span className="text-white font-medium text-sm">USDC</span>
-        </div>
-        <div className="text-white font-bold">${formatPrice(priceData["usd-coin"]?.usd, 4)}</div>
-        <div className={`flex items-center gap-1 ${(priceData["usd-coin"]?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          {(priceData["usd-coin"]?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-          <span className="text-xs">{formatChange(priceData["usd-coin"]?.usd_24h_change)}%</span>
-        </div>
-      </div>
+  <>
+    <style>{`
+      @keyframes scroll {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+      }
+      .animate-scroll {
+        animation: scroll 30s linear infinite;
+      }
+    `}</style>
+    <div className="fixed top-0 left-0 right-0 bg-gray-800 border-b border-gray-700 p-3 z-40 overflow-hidden">
+      <div className="animate-scroll whitespace-nowrap">
+        <div className="inline-flex gap-8">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-orange-500 rounded-full" />
+              <span className="text-white font-medium text-sm">Bitcoin</span>
+            </div>
+            <div className="text-white font-bold">${formatPrice(priceData.bitcoin?.usd)}</div>
+            <div className={`flex items-center gap-1 ${(priceData.bitcoin?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(priceData.bitcoin?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              <span className="text-xs">{formatChange(priceData.bitcoin?.usd_24h_change)}%</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-gray-400 rounded-full" />
+              <span className="text-white font-medium text-sm">Ethereum</span>
+            </div>
+            <div className="text-white font-bold">${formatPrice(priceData.ethereum?.usd)}</div>
+            <div className={`flex items-center gap-1 ${(priceData.ethereum?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(priceData.ethereum?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              <span className="text-xs">{formatChange(priceData.ethereum?.usd_24h_change)}%</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-blue-500 rounded-full" />
+              <span className="text-white font-medium text-sm">USDC</span>
+            </div>
+            <div className="text-white font-bold">${formatPrice(priceData["usd-coin"]?.usd, 4)}</div>
+            <div className={`flex items-center gap-1 ${(priceData["usd-coin"]?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(priceData["usd-coin"]?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              <span className="text-xs">{formatChange(priceData["usd-coin"]?.usd_24h_change)}%</span>
+            </div>
+          </div>
 
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <img src="https://activate.veri.vip/favicon.svg" alt="VERI" className="w-4 h-4" />
-          <span className="text-white font-medium text-sm">VERI</span>
-        </div>
-        <div className="text-white font-bold">${formatPrice(priceData.veritaseum?.usd, 4)}</div>
-        <div className={`flex items-center gap-1 ${(priceData.veritaseum?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          {(priceData.veritaseum?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-          <span className="text-xs">{formatChange(priceData.veritaseum?.usd_24h_change)}%</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <img src="https://activate.veri.vip/favicon.svg" alt="VERI" className="w-4 h-4" />
+              <span className="text-white font-medium text-sm">VERI</span>
+            </div>
+            <div className="text-white font-bold">${formatPrice(priceData.veritaseum?.usd, 4)}</div>
+            <div className={`flex items-center gap-1 ${(priceData.veritaseum?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(priceData.veritaseum?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              <span className="text-xs">{formatChange(priceData.veritaseum?.usd_24h_change)}%</span>
+            </div>
+          </div>
+
+          {/* Duplicate content for seamless scroll */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-orange-500 rounded-full" />
+              <span className="text-white font-medium text-sm">Bitcoin</span>
+            </div>
+            <div className="text-white font-bold">${formatPrice(priceData.bitcoin?.usd)}</div>
+            <div className={`flex items-center gap-1 ${(priceData.bitcoin?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(priceData.bitcoin?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              <span className="text-xs">{formatChange(priceData.bitcoin?.usd_24h_change)}%</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-gray-400 rounded-full" />
+              <span className="text-white font-medium text-sm">Ethereum</span>
+            </div>
+            <div className="text-white font-bold">${formatPrice(priceData.ethereum?.usd)}</div>
+            <div className={`flex items-center gap-1 ${(priceData.ethereum?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(priceData.ethereum?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              <span className="text-xs">{formatChange(priceData.ethereum?.usd_24h_change)}%</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-blue-500 rounded-full" />
+              <span className="text-white font-medium text-sm">USDC</span>
+            </div>
+            <div className="text-white font-bold">${formatPrice(priceData["usd-coin"]?.usd, 4)}</div>
+            <div className={`flex items-center gap-1 ${(priceData["usd-coin"]?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(priceData["usd-coin"]?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              <span className="text-xs">{formatChange(priceData["usd-coin"]?.usd_24h_change)}%</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <img src="https://activate.veri.vip/favicon.svg" alt="VERI" className="w-4 h-4" />
+              <span className="text-white font-medium text-sm">VERI</span>
+            </div>
+            <div className="text-white font-bold">${formatPrice(priceData.veritaseum?.usd, 4)}</div>
+            <div className={`flex items-center gap-1 ${(priceData.veritaseum?.usd_24h_change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {(priceData.veritaseum?.usd_24h_change || 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              <span className="text-xs">{formatChange(priceData.veritaseum?.usd_24h_change)}%</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+  </>
 ));
 
 interface RightSidebarProps {
@@ -157,13 +219,15 @@ interface RightSidebarProps {
   setCommunityName: (v: string) => void;
   createCommunity: () => void;
   isSwapOffers: boolean;
+  debugMode: boolean;
+  setDebugMode: (v: boolean) => void;
 }
 
 const RightSidebar = React.memo((props: RightSidebarProps) => {
   const {
     username, settingsOpen, setSettingsOpen, tempUsername, setTempUsername, handleSettingsSave,
     joinedCommunities, community, selectCommunity, deleteCommunity,
-    communityName, setCommunityName, createCommunity, isSwapOffers
+    communityName, setCommunityName, createCommunity, isSwapOffers, debugMode, setDebugMode
   } = props;
 
   return (
@@ -200,6 +264,29 @@ const RightSidebar = React.memo((props: RightSidebarProps) => {
                     className="bg-gray-700 text-gray-200 border-gray-600 mt-2"
                   />
                 </div>
+                {community && (
+                  <div>
+                    <Label>Current Community Topic</Label>
+                    <div className="mt-2 p-2 bg-gray-700/50 rounded border border-gray-600">
+                      <code className="text-sm text-green-400">{community.contentTopic}</code>
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="debug-mode" className="text-sm font-medium">
+                    Debug Mode
+                  </Label>
+                  <input
+                    id="debug-mode"
+                    type="checkbox"
+                    checked={debugMode}
+                    onChange={(e) => setDebugMode(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                </div>
+                <p className="text-xs text-gray-400">
+                  When enabled, shows all messages with valid timestamps using placeholders for unparseable data.
+                </p>
               </div>
               <DialogFooter>
                 <Button variant="secondary" onClick={() => setSettingsOpen(false)}>
@@ -218,7 +305,7 @@ const RightSidebar = React.memo((props: RightSidebarProps) => {
       {/* Communities */}
       <Card className="bg-gray-800/50 border-gray-700 w-full">
         <CardHeader className="pb-3">
-          <CardTitle className="text-white text-lg">Communities</CardTitle>
+          <CardTitle className="text-white text-xl font-semibold">Communities</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 p-4">
           {joinedCommunities.map((item, index) => (
@@ -288,7 +375,7 @@ const SwapInterface = React.memo((props: SwapInterfaceProps) => {
     <div className="w-full max-w-lg mx-auto">
       <Card className="bg-gray-800/50 border-gray-700">
         <CardHeader className="pb-4">
-          <CardTitle className="text-white text-lg">Asset Swap</CardTitle>
+          <CardTitle className="text-white text-xl font-semibold">Asset Swap</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-2">
@@ -404,23 +491,247 @@ interface SwapOffersProps {
   messages: Message[];
   community?: CommunityMetadata;
   fetchAllMessages: () => void;
+  debugMode: boolean;
+  username: string;
 }
 
-const SwapOffers = React.memo(({ messages, community, fetchAllMessages }: SwapOffersProps) => {
-  const swapOffers = messages
-    .filter(msg => msg.contentTopic === community?.contentTopic)
-    .map((msg) => {
-      try {
-        const rawBytes = bytesFromBase64(msg.payload);
-        const payloadText = new TextDecoder().decode(rawBytes);
-        const offer = JSON.parse(payloadText);
+const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMode, username }: SwapOffersProps) => {
+  const [activeTab, setActiveTab] = useState<'all' | 'mine'>('all');
+  
+  // Filter messages for the current community
+  const relevantMessages = messages.filter(msg => msg.contentTopic === community?.contentTopic);
+  
+  console.log(`🔍 Processing ${relevantMessages.length} messages for community ${community?.name}`);
+  console.log(`🔧 Debug mode: ${debugMode ? 'ON' : 'OFF'}`);
+
+  const swapOffers = relevantMessages.map((msg, index) => {
+    try {
+      const rawBytes = bytesFromBase64(msg.payload);
+      const payloadText = new TextDecoder().decode(rawBytes);
+      
+      console.log(`📄 Message ${index + 1}:`, payloadText.substring(0, 150));
+      console.log(`📅 Timestamp: ${formatDate(msg.timestamp)}`);
+      
+      // Enhanced offer identification - check multiple patterns
+      const isMyOffer = (
+        // Check if our username appears in the message at all
+        payloadText.includes(`"${username}"`) ||
+        // Check for our JSON format with our username
+        payloadText.includes(`"${username}":`) ||
+        // Check for chat format with our username
+        payloadText.startsWith(`${username}:`) ||
+        // Check if the message structure suggests it's ours (simple format from our app)
+        (payloadText.includes('"fromAsset"') &&
+         payloadText.includes('"fromAmount"') &&
+         payloadText.includes('"toAsset"') &&
+         payloadText.includes('"toAmount"') &&
+         payloadText.includes('"timestamp"') &&
+         !payloadText.includes('"offer"') &&
+         !payloadText.includes('"id"') &&
+         !payloadText.includes('"type"') &&
+         !payloadText.includes('"maker"') &&
+         !payloadText.includes('"clientId"'))
+      );
+      
+      console.log(`🔍 Offer identification for message ${index + 1}: isMyOffer=${isMyOffer}, username="${username}"`);
+      
+      // In debug mode, show all messages with valid timestamps
+      if (debugMode && msg.timestamp) {
+        console.log(`🔧 Debug mode: Including message with timestamp`);
         
-        if (!offer.fromAsset || !offer.toAsset || !offer.fromAmount || !offer.toAmount) {
+        // Try to parse as JSON, but don't fail if it's not
+        let parsedData: any = null;
+        let isValidJSON = false;
+        
+        try {
+          parsedData = JSON.parse(payloadText);
+          isValidJSON = true;
+          console.log(`✅ Valid JSON:`, parsedData);
+        } catch (e) {
+          console.log(`❌ Not valid JSON, using raw text`);
+        }
+        
+        // Extract any asset-like information
+        let fromAsset = "Unknown";
+        let toAsset = "Unknown";
+        let fromAmount: number | string = "?";
+        let toAmount: number | string = "?";
+        
+        if (isValidJSON && parsedData) {
+          console.log(`🔍 Full parsed data:`, JSON.stringify(parsedData, null, 2));
+          
+          // Handle different JSON structures
+          if (parsedData.offer) {
+            // swap.veri.lol format: {"offer": {"fromAsset": {"symbol": "BTC"}, "fromAmount": "0.001"}}
+            const offer = parsedData.offer;
+            
+            // Extract assets - could be nested objects with symbol property
+            if (offer.fromAsset) {
+              fromAsset = typeof offer.fromAsset === 'object' && offer.fromAsset.symbol
+                ? offer.fromAsset.symbol.toString().toUpperCase()
+                : offer.fromAsset.toString().toUpperCase();
+            }
+            if (offer.toAsset) {
+              toAsset = typeof offer.toAsset === 'object' && offer.toAsset.symbol
+                ? offer.toAsset.symbol.toString().toUpperCase()
+                : offer.toAsset.toString().toUpperCase();
+            }
+            
+            // Extract amounts
+            if (offer.fromAmount !== undefined && offer.fromAmount !== null) {
+              fromAmount = parseFloat(offer.fromAmount.toString()) || offer.fromAmount;
+            }
+            if (offer.toAmount !== undefined && offer.toAmount !== null) {
+              toAmount = parseFloat(offer.toAmount.toString()) || offer.toAmount;
+            }
+            
+            console.log(`🎯 Offer format - Assets: ${fromAsset}/${toAsset}, Amounts: ${fromAmount}/${toAmount}`);
+            
+          } else if (parsedData.from && parsedData.to) {
+            // from/to format: {"from": {"asset": "BTC", "amount": "1"}, "to": {"asset": "USDC", "amount": "9999"}}
+            if (parsedData.from.asset) {
+              fromAsset = parsedData.from.asset.toString().toUpperCase();
+            }
+            if (parsedData.to.asset) {
+              toAsset = parsedData.to.asset.toString().toUpperCase();
+            }
+            if (parsedData.from.amount !== undefined && parsedData.from.amount !== null) {
+              fromAmount = parseFloat(parsedData.from.amount.toString()) || parsedData.from.amount;
+            }
+            if (parsedData.to.amount !== undefined && parsedData.to.amount !== null) {
+              toAmount = parseFloat(parsedData.to.amount.toString()) || parsedData.to.amount;
+            }
+            
+            console.log(`🎯 From/To format - Assets: ${fromAsset}/${toAsset}, Amounts: ${fromAmount}/${toAmount}`);
+            
+          } else {
+            // Simple format: {"fromAsset": "BTC", "fromAmount": 1, "toAsset": "USDC", "toAmount": 122122}
+            if (parsedData.fromAsset) {
+              fromAsset = parsedData.fromAsset.toString().toUpperCase();
+            }
+            if (parsedData.toAsset) {
+              toAsset = parsedData.toAsset.toString().toUpperCase();
+            }
+            if (parsedData.fromAmount !== undefined && parsedData.fromAmount !== null) {
+              fromAmount = parseFloat(parsedData.fromAmount.toString()) || parsedData.fromAmount;
+            }
+            if (parsedData.toAmount !== undefined && parsedData.toAmount !== null) {
+              toAmount = parseFloat(parsedData.toAmount.toString()) || parsedData.toAmount;
+            }
+            
+            console.log(`🎯 Simple format - Assets: ${fromAsset}/${toAsset}, Amounts: ${fromAmount}/${toAmount}`);
+          }
+          
+        } else {
+          // Try to find asset names in raw text
+          const assetRegex = /(BTC|ETH|USDC|VERI|bitcoin|ethereum|Bitcoin|Ethereum)/gi;
+          const foundAssets = payloadText.match(assetRegex);
+          if (foundAssets && foundAssets.length >= 2) {
+            fromAsset = foundAssets[0].toUpperCase();
+            toAsset = foundAssets[1].toUpperCase();
+          } else if (foundAssets && foundAssets.length === 1) {
+            fromAsset = foundAssets[0].toUpperCase();
+          }
+          
+          // Try to find numbers that might be amounts
+          const numberRegex = /\d+\.?\d*/g;
+          const foundNumbers = payloadText.match(numberRegex);
+          if (foundNumbers && foundNumbers.length >= 2) {
+            fromAmount = parseFloat(foundNumbers[0]) || foundNumbers[0];
+            toAmount = parseFloat(foundNumbers[1]) || foundNumbers[1];
+          } else if (foundNumbers && foundNumbers.length === 1) {
+            fromAmount = parseFloat(foundNumbers[0]) || foundNumbers[0];
+          }
+        }
+        
+        // Final logging of what we extracted
+        console.log(`🎯 Final extracted values:`, { fromAsset, fromAmount, toAsset, toAmount, isMyOffer });
+        
+        const getAssetDisplay = (asset: string) => {
+          const assetUpper = asset.toString().toUpperCase();
+          switch (assetUpper) {
+            case 'BTC':
+            case 'BITCOIN':
+              return <div className="w-4 h-4 bg-orange-500 rounded-full" />;
+            case 'ETH':
+            case 'ETHEREUM':
+              return <div className="w-4 h-4 bg-gray-400 rounded-full" />;
+            case 'USDC':
+            case 'USD':
+              return <div className="w-4 h-4 bg-blue-500 rounded-full" />;
+            case 'VERI':
+            case 'VERITASEUM':
+              return <img src="https://activate.veri.vip/favicon.svg" alt="VERI" className="w-4 h-4" />;
+            default:
+              return <div className="w-4 h-4 bg-gray-500 rounded-full" />;
+          }
+        };
+        
+        const numFromAmount = typeof fromAmount === 'number' ? fromAmount : parseFloat(fromAmount.toString()) || 0;
+        const numToAmount = typeof toAmount === 'number' ? toAmount : parseFloat(toAmount.toString()) || 0;
+        const rate = (numFromAmount > 0 && numToAmount > 0) ? (numToAmount / numFromAmount).toFixed(4) : 'N/A';
+        
+        return {
+          key: `${msg.timestamp ?? Date.now()}-${index}`,
+          fromAsset: fromAsset.toString(),
+          fromAmount: fromAmount,
+          toAsset: toAsset.toString(),
+          toAmount: toAmount,
+          timestamp: msg.timestamp,
+          rate,
+          fromDisplay: getAssetDisplay(fromAsset),
+          toDisplay: getAssetDisplay(toAsset),
+          rawMessage: payloadText,
+          isDebugMode: true,
+          isValidJSON,
+          originalData: parsedData,
+          isMyOffer
+        };
+      }
+      
+      // Normal mode logic with same enhanced extraction
+      if (!debugMode) {
+        let offer;
+        try {
+          offer = JSON.parse(payloadText);
+        } catch {
+          console.log(`❌ Skipping non-JSON message in normal mode`);
+          return null;
+        }
+        
+        let fromAsset, toAsset, fromAmount, toAmount;
+        
+        // Same extraction logic as debug mode
+        if (offer.offer) {
+          const offerData = offer.offer;
+          fromAsset = typeof offerData.fromAsset === 'object' && offerData.fromAsset.symbol
+            ? offerData.fromAsset.symbol
+            : offerData.fromAsset;
+          toAsset = typeof offerData.toAsset === 'object' && offerData.toAsset.symbol
+            ? offerData.toAsset.symbol
+            : offerData.toAsset;
+          fromAmount = offerData.fromAmount;
+          toAmount = offerData.toAmount;
+        } else if (offer.from && offer.to) {
+          fromAsset = offer.from.asset;
+          toAsset = offer.to.asset;
+          fromAmount = offer.from.amount;
+          toAmount = offer.to.amount;
+        } else {
+          fromAsset = offer.fromAsset;
+          toAsset = offer.toAsset;
+          fromAmount = offer.fromAmount;
+          toAmount = offer.toAmount;
+        }
+        
+        if (!fromAsset || !toAsset || (!fromAmount && fromAmount !== 0) || (!toAmount && toAmount !== 0)) {
+          console.log(`🚫 Skipping message - missing required fields in normal mode`);
           return null;
         }
         
         const getAssetDisplay = (asset: string) => {
-          switch (asset) {
+          const assetUpper = asset.toString().toUpperCase();
+          switch (assetUpper) {
             case 'BTC': return <div className="w-4 h-4 bg-orange-500 rounded-full" />;
             case 'ETH': return <div className="w-4 h-4 bg-gray-400 rounded-full" />;
             case 'USDC': return <div className="w-4 h-4 bg-blue-500 rounded-full" />;
@@ -429,53 +740,131 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages }: SwapOf
           }
         };
         
+        const numFromAmount = parseFloat(fromAmount.toString());
+        const numToAmount = parseFloat(toAmount.toString());
+        
         return {
-          key: `${msg.timestamp ?? ''}-${offer.fromAsset}-${offer.toAsset}-${offer.fromAmount}-${offer.toAmount}`,
-          fromAsset: offer.fromAsset,
-          fromAmount: offer.fromAmount,
-          toAsset: offer.toAsset,
-          toAmount: offer.toAmount,
+          key: `${msg.timestamp ?? Date.now()}-${index}`,
+          fromAsset: fromAsset.toString().toUpperCase(),
+          fromAmount: numFromAmount,
+          toAsset: toAsset.toString().toUpperCase(),
+          toAmount: numToAmount,
           timestamp: msg.timestamp,
-          rate: (offer.toAmount / offer.fromAmount).toFixed(6),
-          fromDisplay: getAssetDisplay(offer.fromAsset),
-          toDisplay: getAssetDisplay(offer.toAsset)
+          rate: numFromAmount > 0 ? (numToAmount / numFromAmount).toFixed(4) : '0',
+          fromDisplay: getAssetDisplay(fromAsset.toString()),
+          toDisplay: getAssetDisplay(toAsset.toString()),
+          rawMessage: payloadText,
+          isDebugMode: false,
+          isValidJSON: true,
+          originalData: offer,
+          isMyOffer
         };
-      } catch {
-        return null;
       }
-    })
-    .filter(Boolean) as Array<{
-      key: string; fromAsset: string; fromAmount: number; toAsset: string; toAmount: number;
-      timestamp?: string; rate: string; fromDisplay: JSX.Element; toDisplay: JSX.Element;
-    }>;
+      
+      return null;
+      
+    } catch (error) {
+      console.error("❌ Error processing message:", error);
+      return null;
+    }
+  }).filter(Boolean) as Array<{
+    key: string; fromAsset: string; fromAmount: number | string; toAsset: string; toAmount: number | string;
+    timestamp?: string; rate: string; fromDisplay: JSX.Element; toDisplay: JSX.Element;
+    rawMessage: string; isDebugMode: boolean; isValidJSON: boolean; originalData: any; isMyOffer: boolean;
+  }>;
+
+  // Filter offers based on active tab - "All" now excludes my offers
+  const filteredOffers = activeTab === 'mine'
+    ? swapOffers.filter(offer => offer.isMyOffer)
+    : swapOffers.filter(offer => !offer.isMyOffer); // Changed: exclude my offers from "All"
+
+  // Count offers for tab labels
+  const myOffersCount = swapOffers.filter(o => o.isMyOffer).length;
+  const othersOffersCount = swapOffers.filter(o => !o.isMyOffer).length;
+
+  console.log(`💱 Final result: ${swapOffers.length} offers processed, ${filteredOffers.length} displayed`);
+  console.log(`📊 My offers: ${myOffersCount}, Others: ${othersOffersCount}`);
 
   return (
     <div className="w-full max-w-lg mx-auto">
       <Card className="bg-gray-800/50 border-gray-700">
-        <CardHeader className="flex flex-row items-center justify-between py-3">
-          <CardTitle className="text-white text-lg">Swap Offers</CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchAllMessages}
-            className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-          >
-            <RefreshCw size={14} className="mr-1" />
-            Refresh
-          </Button>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-white text-xl font-semibold">
+                Swap Offers ({filteredOffers.length})
+                {debugMode && <span className="text-yellow-400 text-sm ml-2">[DEBUG]</span>}
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchAllMessages}
+                className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
+              >
+                <RefreshCw size={14} className="mr-1" />
+                Refresh
+              </Button>
+            </div>
+            
+            {/* Tab buttons - Updated labels to reflect new behavior */}
+            <div className="flex gap-1 bg-gray-700/50 rounded-lg p-1">
+              <Button
+                variant={activeTab === 'all' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveTab('all')}
+                className={`flex-1 text-xs ${
+                  activeTab === 'all'
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                All Offers ({othersOffersCount})
+              </Button>
+              <Button
+                variant={activeTab === 'mine' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveTab('mine')}
+                className={`flex-1 text-xs ${
+                  activeTab === 'mine'
+                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                    : 'text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                My Offers ({myOffersCount})
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-4">
-          {swapOffers.length === 0 ? (
+          {filteredOffers.length === 0 ? (
             <div className="text-center py-8">
               <div className="text-4xl mb-3">📭</div>
-              <h3 className="text-lg font-semibold text-white mb-1">No offers available</h3>
-              <p className="text-gray-400 text-sm">Be the first to create a swap offer!</p>
+              <h3 className="text-lg font-semibold text-white mb-1">
+                {activeTab === 'mine' ? 'No offers created' : 'No offers available'}
+              </h3>
+              <p className="text-gray-400 text-sm">
+                {activeTab === 'mine'
+                  ? "Create your first swap offer above"
+                  : "No offers from other users found"
+                }
+              </p>
             </div>
           ) : (
             <div className="h-64 overflow-y-auto">
               <div className="space-y-2 pr-2">
-                {swapOffers.map(offer => (
-                  <div key={offer.key} className="bg-gray-700/30 rounded p-3 border border-gray-600/50">
+                {filteredOffers.map(offer => (
+                  <div
+                    key={offer.key}
+                    className={`rounded p-3 border ${
+                      offer.isMyOffer
+                        ? "bg-green-900/20 border-green-600/50"
+                        : offer.isDebugMode && !offer.isValidJSON
+                        ? "bg-yellow-900/20 border-yellow-600/50"
+                        : offer.isDebugMode
+                        ? "bg-blue-900/20 border-blue-600/50"
+                        : "bg-gray-700/30 border-gray-600/50"
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2">
@@ -495,6 +884,21 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages }: SwapOf
                       <div className="text-right">
                         <div className="text-gray-300 text-sm">Rate: {offer.rate}</div>
                         <div className="text-gray-400 text-xs">{formatDate(offer.timestamp)}</div>
+                        <div className="flex items-center gap-1 text-xs">
+                          {offer.isMyOffer ? (
+                            <span className="text-green-400">SENT</span>
+                          ) : (
+                            <span className="text-blue-400">RECEIVED</span>
+                          )}
+                          {offer.isDebugMode && (
+                            <span className="text-gray-400">•</span>
+                          )}
+                          {offer.isDebugMode && (
+                            <span className={offer.isValidJSON ? "text-green-400" : "text-yellow-400"}>
+                              {offer.isValidJSON ? "JSON" : "RAW"}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -522,6 +926,7 @@ function App() {
   const [fromAmount, setFromAmount] = useState("");
   const [toAsset, setToAsset] = useState("USDC");
   const [toAmount, setToAmount] = useState("");
+  const [lastEditedField, setLastEditedField] = useState<'from' | 'to'>('from');
   
   const [nwakuVersion, setNwakuVersion] = useState("");
   const [health, setHealth] = useState<HealthResponse>();
@@ -531,6 +936,7 @@ function App() {
   const [messagesReceived, setMessagesReceived] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tempUsername, setTempUsername] = useState("");
+  const [debugMode, setDebugMode] = useState(false);
   
   const [priceData, setPriceData] = useState<PriceData>({
     bitcoin: { usd: 66420.25, usd_24h_change: 2.34 },
@@ -552,6 +958,7 @@ function App() {
     }
     setMessagesSent(parseInt(localStorage.getItem("messagesSent") || "0"));
     setMessagesReceived(parseInt(localStorage.getItem("messagesReceived") || "0"));
+    setDebugMode(localStorage.getItem("debugMode") === "true");
   }, []);
 
   // Calculate conversion without blocking inputs
@@ -579,14 +986,19 @@ function App() {
     return convertedAmount.toFixed(decimals).replace(/\.?0+$/, '');
   };
 
-  // Simple input handlers
+  // Updated input handlers that only auto-calculate when not manually overridden
   const handleFromAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setFromAmount(value);
-    if (value) {
+    setLastEditedField('from');
+    
+    // Only auto-calculate if we just edited the 'from' field and 'to' field hasn't been manually edited recently
+    if (value && (lastEditedField === 'from' || !toAmount)) {
       const converted = calculateConversion(value, fromAsset, toAsset);
-      setToAmount(converted);
-    } else {
+      if (converted) {
+        setToAmount(converted);
+      }
+    } else if (!value) {
       setToAmount("");
     }
   };
@@ -594,10 +1006,15 @@ function App() {
   const handleToAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setToAmount(value);
-    if (value) {
+    setLastEditedField('to');
+    
+    // Only auto-calculate if we just edited the 'to' field and 'from' field hasn't been manually edited recently
+    if (value && (lastEditedField === 'to' || !fromAmount)) {
       const converted = calculateConversion(value, toAsset, fromAsset);
-      setFromAmount(converted);
-    } else {
+      if (converted) {
+        setFromAmount(converted);
+      }
+    } else if (!value) {
       setFromAmount("");
     }
   };
@@ -657,7 +1074,7 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch messages
+  // Fetch messages - Updated with improved logging and parameters
   const fetchAllMessages = async () => {
     try {
       if (!joinedCommunities.length) {
@@ -669,10 +1086,15 @@ function App() {
       joinedCommunities.forEach(c => params.append("contentTopics", c.contentTopic));
       params.set("includeData", "true");
       params.set("ascending", "false");
-      params.set("pageSize", "100");
-
+      params.set("pageSize", "200");
+      
+      console.log("🔍 Fetching messages with params:", params.toString());
+      
       const response = await axios.get(`${SERVICE_ENDPOINT}/store/v1/messages?${params.toString()}`);
       const newMessages = response.data.messages || [];
+      
+      console.log(`📨 Retrieved ${newMessages.length} messages from store`);
+      
       const sortedMessages = newMessages.sort((a: Message, b: Message) => {
         const timeA = a.timestamp ? BigInt(a.timestamp) : BigInt(0);
         const timeB = b.timestamp ? BigInt(b.timestamp) : BigInt(0);
@@ -801,6 +1223,7 @@ function App() {
       localStorage.setItem("username", tempUsername);
       toast.success("Username updated");
     }
+    localStorage.setItem("debugMode", debugMode.toString());
     setSettingsOpen(false);
   };
 
@@ -834,6 +1257,8 @@ function App() {
           setCommunityName={setCommunityName}
           createCommunity={createCommunity}
           isSwapOffers={community?.name === "swap-offers"}
+          debugMode={debugMode}
+          setDebugMode={setDebugMode}
         />
       )}
 
@@ -894,6 +1319,8 @@ function App() {
                 messages={messages}
                 community={community}
                 fetchAllMessages={fetchAllMessages}
+                debugMode={debugMode}
+                username={username}
               />
             </>
           ) : (
@@ -972,3 +1399,4 @@ function App() {
 }
 
 export default App;
+
