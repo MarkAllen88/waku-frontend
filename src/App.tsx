@@ -86,6 +86,36 @@ const formatDate = (timestamp?: string) => {
   }
 };
 
+// Function to generate display name from content topic
+const generateDisplayName = (contentTopic: string): string => {
+  try {
+    const parts = contentTopic.split('/');
+    if (parts.length < 4) return contentTopic;
+    
+    const app = parts[1];
+    const topic = parts[3];
+    
+    // Special cases for common patterns
+    if (app === 'waku' && topic === 'default-content') {
+      return 'waku';
+    }
+    
+    if (app === 'status') {
+      return 'status';
+    }
+    
+    // For apps with multiple topics (like supercrypto), include the topic name
+    if (topic !== 'proto' && topic !== app && topic !== 'default') {
+      return `${app}/${topic}`;
+    }
+    
+    // Default: just use the app name
+    return app;
+  } catch {
+    return contentTopic;
+  }
+};
+
 // Scrolling Price Bar Component with CSS-in-JS fix
 type PriceBarProps = { priceData: PriceData };
 const PriceBar = React.memo(({ priceData }: PriceBarProps) => (
@@ -221,13 +251,18 @@ interface RightSidebarProps {
   isSwapOffers: boolean;
   debugMode: boolean;
   setDebugMode: (v: boolean) => void;
+  advancedMode: boolean;
+  setAdvancedMode: (v: boolean) => void;
+  fullContentTopic: string;
+  setFullContentTopic: (v: string) => void;
 }
 
 const RightSidebar = React.memo((props: RightSidebarProps) => {
   const {
     username, settingsOpen, setSettingsOpen, tempUsername, setTempUsername, handleSettingsSave,
     joinedCommunities, community, selectCommunity, deleteCommunity,
-    communityName, setCommunityName, createCommunity, isSwapOffers, debugMode, setDebugMode
+    communityName, setCommunityName, createCommunity, isSwapOffers, debugMode, setDebugMode,
+    advancedMode, setAdvancedMode, fullContentTopic, setFullContentTopic
   } = props;
 
   return (
@@ -287,6 +322,21 @@ const RightSidebar = React.memo((props: RightSidebarProps) => {
                 <p className="text-xs text-gray-400">
                   When enabled, shows all messages with valid timestamps using placeholders for unparseable data.
                 </p>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="advanced-mode" className="text-sm font-medium">
+                    Advanced Mode
+                  </Label>
+                  <input
+                    id="advanced-mode"
+                    type="checkbox"
+                    checked={advancedMode}
+                    onChange={(e) => setAdvancedMode(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                </div>
+                <p className="text-xs text-gray-400">
+                  When enabled, allows joining communities with custom content topics.
+                </p>
               </div>
               <DialogFooter>
                 <Button variant="secondary" onClick={() => setSettingsOpen(false)}>
@@ -318,6 +368,7 @@ const RightSidebar = React.memo((props: RightSidebarProps) => {
                     ? "bg-green-600 hover:bg-green-700"
                     : "text-gray-300 hover:bg-gray-700"
                 }`}
+                title={item.contentTopic} // Show full content topic on hover
               >
                 {item.name}
               </Button>
@@ -331,16 +382,42 @@ const RightSidebar = React.memo((props: RightSidebarProps) => {
               </Button>
             </div>
           ))}
+          
           <div className="pt-2 border-t border-gray-700">
-            <Input
-              value={communityName}
-              onChange={(e) => setCommunityName(e.target.value)}
-              placeholder="Community name"
-              className="bg-gray-700 border-gray-600 text-white mb-2 text-sm"
-            />
+            {advancedMode ? (
+              // Advanced Mode: Full Content Topic Input
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-400">Full Content Topic</Label>
+                <Input
+                  value={fullContentTopic}
+                  onChange={(e) => setFullContentTopic(e.target.value)}
+                  placeholder="/my-app/1/community/proto"
+                  className="bg-gray-700 border-gray-600 text-white text-xs font-mono"
+                />
+                <div className="text-xs text-gray-500">
+                  Format: /application/version/topic/encoding
+                </div>
+              </div>
+            ) : (
+              // Simple Mode: Community Name Input
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-400">Community Name</Label>
+                <Input
+                  value={communityName}
+                  onChange={(e) => setCommunityName(e.target.value)}
+                  placeholder="Community name"
+                  className="bg-gray-700 border-gray-600 text-white text-sm"
+                />
+                <div className="text-xs text-gray-500">
+                  Will create: /waku/1/{communityName || "name"}/proto
+                </div>
+              </div>
+            )}
+
             <Button
               onClick={createCommunity}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-sm py-2"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-sm py-2 mt-2"
+              disabled={advancedMode ? !fullContentTopic.trim() : !communityName.trim()}
             >
               Join Community
             </Button>
@@ -938,6 +1015,10 @@ function App() {
   const [tempUsername, setTempUsername] = useState("");
   const [debugMode, setDebugMode] = useState(false);
   
+  // Advanced mode state
+  const [advancedMode, setAdvancedMode] = useState(false);
+  const [fullContentTopic, setFullContentTopic] = useState("");
+  
   const [priceData, setPriceData] = useState<PriceData>({
     bitcoin: { usd: 66420.25, usd_24h_change: 2.34 },
     ethereum: { usd: 3200.50, usd_24h_change: 1.87 },
@@ -959,6 +1040,7 @@ function App() {
     setMessagesSent(parseInt(localStorage.getItem("messagesSent") || "0"));
     setMessagesReceived(parseInt(localStorage.getItem("messagesReceived") || "0"));
     setDebugMode(localStorage.getItem("debugMode") === "true");
+    setAdvancedMode(localStorage.getItem("advancedMode") === "true");
   }, []);
 
   // Calculate conversion without blocking inputs
@@ -1122,22 +1204,58 @@ function App() {
   };
 
   const createCommunity = () => {
-    if (!communityName.trim()) {
-      toast.error("Community name is empty");
+    let contentTopic: string;
+    let displayName: string;
+
+    if (advancedMode) {
+      if (!fullContentTopic.trim()) {
+        toast.error("Content topic is empty");
+        return;
+      }
+      
+      // Validate format
+      if (!fullContentTopic.startsWith('/') || fullContentTopic.split('/').length < 4) {
+        toast.error("Invalid content topic format. Expected: /app/version/topic/encoding");
+        return;
+      }
+      
+      contentTopic = fullContentTopic.trim();
+      // Generate display name using the helper function
+      displayName = generateDisplayName(contentTopic);
+    } else {
+      if (!communityName.trim()) {
+        toast.error("Community name is empty");
+        return;
+      }
+      
+      contentTopic = communityName === "swap-offers"
+        ? "/swap-offers/1/offer/proto"
+        : `/waku/1/${communityName}/proto`;
+      displayName = communityName;
+    }
+
+    const payload: CommunityMetadata = {
+      name: displayName,
+      contentTopic
+    };
+
+    const exists = joinedCommunities.some((c) => c.contentTopic === payload.contentTopic);
+    if (exists) {
+      toast.error("Already joined this community");
       return;
     }
 
-    const contentTopic = communityName === "swap-offers" ? "/swap-offers/1/offer/proto" : `/waku/1/${communityName}/proto`;
-    const payload: CommunityMetadata = { name: communityName, contentTopic };
-
-    const exists = joinedCommunities.some((c) => c.contentTopic === payload.contentTopic);
-    const joined = exists ? joinedCommunities : [...joinedCommunities, payload];
-
+    const joined = [...joinedCommunities, payload];
     setJoinedCommunities(joined);
     localStorage.setItem("communities", JSON.stringify(joined));
     setCommunity(payload);
     localStorage.setItem("community", JSON.stringify(payload));
+    
+    // Clear inputs
     setCommunityName("");
+    setFullContentTopic("");
+    
+    toast.success(`Joined ${displayName}`);
   };
 
   const selectCommunity = (index: number) => {
@@ -1224,6 +1342,7 @@ function App() {
       toast.success("Username updated");
     }
     localStorage.setItem("debugMode", debugMode.toString());
+    localStorage.setItem("advancedMode", advancedMode.toString());
     setSettingsOpen(false);
   };
 
@@ -1259,6 +1378,10 @@ function App() {
           isSwapOffers={community?.name === "swap-offers"}
           debugMode={debugMode}
           setDebugMode={setDebugMode}
+          advancedMode={advancedMode}
+          setAdvancedMode={setAdvancedMode}
+          fullContentTopic={fullContentTopic}
+          setFullContentTopic={setFullContentTopic}
         />
       )}
 
@@ -1285,13 +1408,33 @@ function App() {
         <div className="flex flex-col items-center justify-center min-h-screen gap-6">
           <h1 className="text-2xl font-bold text-white">Join a Community</h1>
           <div className="space-y-4">
-            <Input
-              value={communityName}
-              onChange={(e) => setCommunityName(e.target.value)}
-              placeholder="Enter community name (e.g., swap-offers)"
-              className="bg-gray-700 border-gray-600 text-white"
-            />
-            <Button onClick={createCommunity} className="w-full bg-blue-600 hover:bg-blue-700">
+            {advancedMode ? (
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-400">Full Content Topic</Label>
+                <Input
+                  value={fullContentTopic}
+                  onChange={(e) => setFullContentTopic(e.target.value)}
+                  placeholder="/my-app/1/community/proto"
+                  className="bg-gray-700 border-gray-600 text-white font-mono"
+                />
+                <div className="text-xs text-gray-500">
+                  Format: /application/version/topic/encoding
+                </div>
+              </div>
+            ) : (
+              <Input
+                value={communityName}
+                onChange={(e) => setCommunityName(e.target.value)}
+                placeholder="Enter community name (e.g., swap-offers)"
+                className="bg-gray-700 border-gray-600 text-white"
+              />
+            )}
+            
+            <Button
+              onClick={createCommunity}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+              disabled={advancedMode ? !fullContentTopic.trim() : !communityName.trim()}
+            >
               Join Community
             </Button>
           </div>
@@ -1399,4 +1542,3 @@ function App() {
 }
 
 export default App;
-
