@@ -15,8 +15,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import axios from "axios";
-import { Settings, X, ArrowUpDown, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Settings, X, ArrowUpDown, TrendingUp, TrendingDown, RefreshCw, Trash2 } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
 import React from "react";
 
@@ -114,6 +114,19 @@ const generateDisplayName = (contentTopic: string): string => {
   } catch {
     return contentTopic;
   }
+};
+
+// Helper function to sanitize community names
+const sanitizeCommunityName = (name: string): string => {
+  // Replace spaces with dashes first, then handle other problematic characters
+  return name.replace(/\s+/g, '-').replace(/[\/\\:*?"<>|]/g, '-');
+};
+
+// Helper function to validate content topic format
+const validateContentTopic = (topic: string): boolean => {
+  if (!topic.startsWith('/')) return false;
+  const parts = topic.split('/');
+  return parts.length === 4 && parts[1] && parts[2] && parts[3];
 };
 
 // Scrolling Price Bar Component with CSS-in-JS fix
@@ -242,9 +255,10 @@ interface RightSidebarProps {
   setTempUsername: (v: string) => void;
   handleSettingsSave: () => void;
   joinedCommunities: CommunityMetadata[];
+  setJoinedCommunities: (communities: CommunityMetadata[]) => void;
   community?: CommunityMetadata;
   selectCommunity: (index: number) => void;
-  deleteCommunity: (index: number) => (e: React.MouseEvent) => void;
+  deleteCommunity: (index: number) => void;
   communityName: string;
   setCommunityName: (v: string) => void;
   createCommunity: () => void;
@@ -260,10 +274,107 @@ interface RightSidebarProps {
 const RightSidebar = React.memo((props: RightSidebarProps) => {
   const {
     username, settingsOpen, setSettingsOpen, tempUsername, setTempUsername, handleSettingsSave,
-    joinedCommunities, community, selectCommunity, deleteCommunity,
+    joinedCommunities, setJoinedCommunities, community, selectCommunity, deleteCommunity,
     communityName, setCommunityName, createCommunity, isSwapOffers, debugMode, setDebugMode,
     advancedMode, setAdvancedMode, fullContentTopic, setFullContentTopic
   } = props;
+
+  const [usernameChangeConfirmOpen, setUsernameChangeConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [communityToDelete, setCommunityToDelete] = useState<number>(-1);
+  const [draggedItem, setDraggedItem] = useState<number | null>(null);
+  const [dragOverItem, setDragOverItem] = useState<number | null>(null);
+  const usernameInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle community name change - simplified to just show toast warning
+  const handleCommunityNameChange = (value: string) => {
+    if (value.includes('/')) {
+      toast.info("For custom content topics, please enable Advanced Mode in Settings");
+      return;
+    }
+    setCommunityName(value);
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedItem(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverItem(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    
+    if (draggedItem === null) return;
+    
+    const newCommunities = [...joinedCommunities];
+    const draggedCommunity = newCommunities[draggedItem];
+    
+    // Remove the dragged item
+    newCommunities.splice(draggedItem, 1);
+    
+    // Insert at new position
+    const insertIndex = draggedItem < dropIndex ? dropIndex - 1 : dropIndex;
+    newCommunities.splice(insertIndex, 0, draggedCommunity);
+    
+    // Update state and localStorage
+    setJoinedCommunities(newCommunities);
+    localStorage.setItem("communities", JSON.stringify(newCommunities));
+    
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const handleUsernameChange = () => {
+    if (tempUsername !== username) {
+      setUsernameChangeConfirmOpen(true);
+    } else {
+      handleSettingsSave();
+    }
+  };
+
+  const confirmUsernameChange = () => {
+    setUsernameChangeConfirmOpen(false);
+    handleSettingsSave();
+  };
+
+  const handleDeleteCommunity = (index: number) => {
+    setCommunityToDelete(index);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteCommunity = () => {
+    if (communityToDelete >= 0) {
+      deleteCommunity(communityToDelete);
+    }
+    setDeleteConfirmOpen(false);
+    setCommunityToDelete(-1);
+  };
+
+  // Clear selection when settings dialog opens
+  const handleSettingsOpen = (open: boolean) => {
+    setSettingsOpen(open);
+    if (open) {
+      // Clear selection after dialog opens
+      setTimeout(() => {
+        if (usernameInputRef.current) {
+          usernameInputRef.current.setSelectionRange(
+            usernameInputRef.current.value.length,
+            usernameInputRef.current.value.length
+          );
+        }
+      }, 100);
+    }
+  };
 
   return (
     <div className={`fixed right-4 ${isSwapOffers ? "top-16" : "top-4"} flex flex-col items-end gap-4 z-30 w-64`}>
@@ -278,72 +389,152 @@ const RightSidebar = React.memo((props: RightSidebarProps) => {
               <span className="text-white">Test</span>
             </div>
           </div>
-          <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+          <Dialog open={settingsOpen} onOpenChange={handleSettingsOpen}>
             <DialogTrigger asChild>
               <Button variant="ghost" size="sm" className="text-gray-200 hover:bg-gray-700">
                 <Settings size={16} />
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-gray-800 text-gray-200 border-gray-700">
+            <DialogContent className="bg-gray-800 text-gray-200 border-gray-700 max-h-[80vh] h-[600px]">
               <DialogHeader>
                 <DialogTitle>Settings</DialogTitle>
                 <DialogDescription className="text-gray-400">Configure your preferences</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="username">Username</Label>
-                  <Input
-                    id="username"
-                    value={tempUsername}
-                    onChange={(e) => setTempUsername(e.target.value)}
-                    className="bg-gray-700 text-gray-200 border-gray-600 mt-2"
-                  />
-                </div>
-                {community && (
+              <ScrollArea className="flex-1 pr-4">
+                <div className="space-y-4">
                   <div>
-                    <Label>Current Community Topic</Label>
-                    <div className="mt-2 p-2 bg-gray-700/50 rounded border border-gray-600">
-                      <code className="text-sm text-green-400">{community.contentTopic}</code>
+                    <Label htmlFor="username">Username</Label>
+                    <Input
+                      ref={usernameInputRef}
+                      id="username"
+                      value={tempUsername}
+                      onChange={(e) => setTempUsername(e.target.value)}
+                      className="bg-gray-700 text-gray-200 border-gray-600 mt-2"
+                    />
+                  </div>
+                  {community && (
+                    <div>
+                      <Label>Current Community Topic</Label>
+                      <div className="mt-2 p-2 bg-gray-700/50 rounded border border-gray-600">
+                        <code className="text-sm text-green-400">{community.contentTopic}</code>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="debug-mode" className="text-sm font-medium">
+                      Debug Mode
+                    </Label>
+                    <input
+                      id="debug-mode"
+                      type="checkbox"
+                      checked={debugMode}
+                      onChange={(e) => setDebugMode(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    When enabled, shows all messages with valid timestamps using placeholders for unparseable data.
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="advanced-mode" className="text-sm font-medium">
+                      Advanced Mode
+                    </Label>
+                    <input
+                      id="advanced-mode"
+                      type="checkbox"
+                      checked={advancedMode}
+                      onChange={(e) => setAdvancedMode(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    When enabled, allows joining communities with custom content topics.
+                  </p>
+
+                  {/* Community Management Section */}
+                  <div className="pt-4 border-t border-gray-600">
+                    <Label className="text-sm font-medium mb-3 block">Manage Communities (Drag to Reorder)</Label>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {joinedCommunities.map((item, index) => (
+                        <div
+                          key={item.contentTopic}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, index)}
+                          onDragOver={(e) => handleDragOver(e, index)}
+                          onDragEnd={handleDragEnd}
+                          onDrop={(e) => handleDrop(e, index)}
+                          className={`flex items-center justify-between p-2 bg-gray-700/50 rounded cursor-move transition-colors ${
+                            draggedItem === index ? 'opacity-50' : ''
+                          } ${
+                            dragOverItem === index ? 'bg-blue-600/20 border-blue-500/50 border' : ''
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 flex-1">
+                            <div className="text-gray-500">⋮⋮</div>
+                            <span className="text-sm text-gray-300 flex-1 truncate" title={item.contentTopic}>
+                              {item.name}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteCommunity(index)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-900/20 p-1"
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="debug-mode" className="text-sm font-medium">
-                    Debug Mode
-                  </Label>
-                  <input
-                    id="debug-mode"
-                    type="checkbox"
-                    checked={debugMode}
-                    onChange={(e) => setDebugMode(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                  />
                 </div>
-                <p className="text-xs text-gray-400">
-                  When enabled, shows all messages with valid timestamps using placeholders for unparseable data.
-                </p>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="advanced-mode" className="text-sm font-medium">
-                    Advanced Mode
-                  </Label>
-                  <input
-                    id="advanced-mode"
-                    type="checkbox"
-                    checked={advancedMode}
-                    onChange={(e) => setAdvancedMode(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                  />
-                </div>
-                <p className="text-xs text-gray-400">
-                  When enabled, allows joining communities with custom content topics.
-                </p>
-              </div>
+              </ScrollArea>
               <DialogFooter>
                 <Button variant="secondary" onClick={() => setSettingsOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleSettingsSave}>
+                <Button onClick={handleUsernameChange}>
                   Save
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Username Change Confirmation Dialog */}
+          <Dialog open={usernameChangeConfirmOpen} onOpenChange={setUsernameChangeConfirmOpen}>
+            <DialogContent className="bg-gray-800 text-gray-200 border-gray-700">
+              <DialogHeader>
+                <DialogTitle>Confirm Username Change</DialogTitle>
+                <DialogDescription className="text-gray-400">
+                  Are you sure you want to change your username? This may affect your swap offers and message history.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="secondary" onClick={() => setUsernameChangeConfirmOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={confirmUsernameChange} className="bg-orange-600 hover:bg-orange-700">
+                  Yes, Change Username
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Community Deletion Confirmation Dialog */}
+          <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+            <DialogContent className="bg-gray-800 text-gray-200 border-gray-700">
+              <DialogHeader>
+                <DialogTitle>Confirm Community Removal</DialogTitle>
+                <DialogDescription className="text-gray-400">
+                  Are you sure you want to remove "{communityToDelete >= 0 ? joinedCommunities[communityToDelete]?.name : ''}" from your communities?
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="secondary" onClick={() => setDeleteConfirmOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={confirmDeleteCommunity} className="bg-red-600 hover:bg-red-700">
+                  Yes, Remove Community
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -359,7 +550,7 @@ const RightSidebar = React.memo((props: RightSidebarProps) => {
         </CardHeader>
         <CardContent className="space-y-2 p-4">
           {joinedCommunities.map((item, index) => (
-            <div key={item.contentTopic} className="flex items-center justify-between">
+            <div key={item.contentTopic} className="flex items-center">
               <Button
                 variant={item.name === community?.name ? "default" : "ghost"}
                 onClick={() => selectCommunity(index)}
@@ -371,14 +562,6 @@ const RightSidebar = React.memo((props: RightSidebarProps) => {
                 title={item.contentTopic} // Show full content topic on hover
               >
                 {item.name}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={deleteCommunity(index)}
-                className="text-gray-400 hover:text-red-400 ml-2 p-1"
-              >
-                <X size={14} />
               </Button>
             </div>
           ))}
@@ -404,12 +587,12 @@ const RightSidebar = React.memo((props: RightSidebarProps) => {
                 <Label className="text-xs text-gray-400">Community Name</Label>
                 <Input
                   value={communityName}
-                  onChange={(e) => setCommunityName(e.target.value)}
+                  onChange={(e) => handleCommunityNameChange(e.target.value)}
                   placeholder="Community name"
                   className="bg-gray-700 border-gray-600 text-white text-sm"
                 />
                 <div className="text-xs text-gray-500">
-                  Will create: /waku/1/{communityName || "name"}/proto
+                  Will create: /waku/1/{sanitizeCommunityName(communityName) || "name"}/proto
                 </div>
               </div>
             )}
@@ -457,9 +640,9 @@ const SwapInterface = React.memo((props: SwapInterfaceProps) => {
         <CardContent className="space-y-3">
           <div className="space-y-2">
             <Label className="text-gray-300 text-sm">From</Label>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <Select value={fromAsset} onValueChange={setFromAsset}>
-                <SelectTrigger className="w-28 bg-gray-700 border-gray-600 text-white">
+                <SelectTrigger className="w-32 bg-gray-700 border-gray-600 text-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-gray-700 border-gray-600">
@@ -495,7 +678,7 @@ const SwapInterface = React.memo((props: SwapInterfaceProps) => {
                 value={fromAmount}
                 onChange={handleFromAmountChange}
                 placeholder="0.0"
-                className="bg-gray-700 border-gray-600 text-white text-right"
+                className="flex-1 bg-gray-700 border-gray-600 text-white text-right"
               />
             </div>
           </div>
@@ -508,9 +691,9 @@ const SwapInterface = React.memo((props: SwapInterfaceProps) => {
 
           <div className="space-y-2">
             <Label className="text-gray-300 text-sm">To</Label>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <Select value={toAsset} onValueChange={setToAsset}>
-                <SelectTrigger className="w-28 bg-gray-700 border-gray-600 text-white">
+                <SelectTrigger className="w-32 bg-gray-700 border-gray-600 text-white">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-gray-700 border-gray-600">
@@ -546,18 +729,21 @@ const SwapInterface = React.memo((props: SwapInterfaceProps) => {
                 value={toAmount}
                 onChange={handleToAmountChange}
                 placeholder="0.0"
-                className="bg-gray-700 border-gray-600 text-white text-right"
+                className="flex-1 bg-gray-700 border-gray-600 text-white text-right"
               />
             </div>
           </div>
 
-          <Button
-            onClick={sendSwapOffer}
-            className="w-full bg-blue-600 hover:bg-blue-700 font-medium py-2 mt-4"
-            disabled={!fromAmount || !toAmount}
-          >
-            Create Swap Offer
-          </Button>
+          <div className="flex gap-3 mt-4">
+            <div className="w-32"></div> {/* Spacer to align with dropdown width */}
+            <Button
+              onClick={sendSwapOffer}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 font-medium py-2"
+              disabled={!fromAmount || !toAmount}
+            >
+              Create Swap Offer
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -572,22 +758,16 @@ interface SwapOffersProps {
   username: string;
 }
 
-const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMode, username }: SwapOffersProps) => {
+const SwapOffers = React.memo(({ messages, community, debugMode, username }: SwapOffersProps) => {
   const [activeTab, setActiveTab] = useState<'all' | 'mine'>('all');
   
   // Filter messages for the current community
   const relevantMessages = messages.filter(msg => msg.contentTopic === community?.contentTopic);
-  
-  console.log(`🔍 Processing ${relevantMessages.length} messages for community ${community?.name}`);
-  console.log(`🔧 Debug mode: ${debugMode ? 'ON' : 'OFF'}`);
 
   const swapOffers = relevantMessages.map((msg, index) => {
     try {
       const rawBytes = bytesFromBase64(msg.payload);
       const payloadText = new TextDecoder().decode(rawBytes);
-      
-      console.log(`📄 Message ${index + 1}:`, payloadText.substring(0, 150));
-      console.log(`📅 Timestamp: ${formatDate(msg.timestamp)}`);
       
       // Enhanced offer identification - check multiple patterns
       const isMyOffer = (
@@ -610,12 +790,8 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
          !payloadText.includes('"clientId"'))
       );
       
-      console.log(`🔍 Offer identification for message ${index + 1}: isMyOffer=${isMyOffer}, username="${username}"`);
-      
       // In debug mode, show all messages with valid timestamps
       if (debugMode && msg.timestamp) {
-        console.log(`🔧 Debug mode: Including message with timestamp`);
-        
         // Try to parse as JSON, but don't fail if it's not
         let parsedData: any = null;
         let isValidJSON = false;
@@ -623,9 +799,8 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
         try {
           parsedData = JSON.parse(payloadText);
           isValidJSON = true;
-          console.log(`✅ Valid JSON:`, parsedData);
         } catch (e) {
-          console.log(`❌ Not valid JSON, using raw text`);
+          // Not JSON, will use raw text parsing
         }
         
         // Extract any asset-like information
@@ -635,8 +810,6 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
         let toAmount: number | string = "?";
         
         if (isValidJSON && parsedData) {
-          console.log(`🔍 Full parsed data:`, JSON.stringify(parsedData, null, 2));
-          
           // Handle different JSON structures
           if (parsedData.offer) {
             // swap.veri.lol format: {"offer": {"fromAsset": {"symbol": "BTC"}, "fromAmount": "0.001"}}
@@ -662,8 +835,6 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
               toAmount = parseFloat(offer.toAmount.toString()) || offer.toAmount;
             }
             
-            console.log(`🎯 Offer format - Assets: ${fromAsset}/${toAsset}, Amounts: ${fromAmount}/${toAmount}`);
-            
           } else if (parsedData.from && parsedData.to) {
             // from/to format: {"from": {"asset": "BTC", "amount": "1"}, "to": {"asset": "USDC", "amount": "9999"}}
             if (parsedData.from.asset) {
@@ -679,8 +850,6 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
               toAmount = parseFloat(parsedData.to.amount.toString()) || parsedData.to.amount;
             }
             
-            console.log(`🎯 From/To format - Assets: ${fromAsset}/${toAsset}, Amounts: ${fromAmount}/${toAmount}`);
-            
           } else {
             // Simple format: {"fromAsset": "BTC", "fromAmount": 1, "toAsset": "USDC", "toAmount": 122122}
             if (parsedData.fromAsset) {
@@ -695,8 +864,6 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
             if (parsedData.toAmount !== undefined && parsedData.toAmount !== null) {
               toAmount = parseFloat(parsedData.toAmount.toString()) || parsedData.toAmount;
             }
-            
-            console.log(`🎯 Simple format - Assets: ${fromAsset}/${toAsset}, Amounts: ${fromAmount}/${toAmount}`);
           }
           
         } else {
@@ -720,9 +887,6 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
             fromAmount = parseFloat(foundNumbers[0]) || foundNumbers[0];
           }
         }
-        
-        // Final logging of what we extracted
-        console.log(`🎯 Final extracted values:`, { fromAsset, fromAmount, toAsset, toAmount, isMyOffer });
         
         const getAssetDisplay = (asset: string) => {
           const assetUpper = asset.toString().toUpperCase();
@@ -772,7 +936,6 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
         try {
           offer = JSON.parse(payloadText);
         } catch {
-          console.log(`❌ Skipping non-JSON message in normal mode`);
           return null;
         }
         
@@ -802,7 +965,6 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
         }
         
         if (!fromAsset || !toAsset || (!fromAmount && fromAmount !== 0) || (!toAmount && toAmount !== 0)) {
-          console.log(`🚫 Skipping message - missing required fields in normal mode`);
           return null;
         }
         
@@ -841,7 +1003,7 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
       return null;
       
     } catch (error) {
-      console.error("❌ Error processing message:", error);
+      console.error("Error processing swap offer:", error);
       return null;
     }
   }).filter(Boolean) as Array<{
@@ -859,9 +1021,6 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
   const myOffersCount = swapOffers.filter(o => o.isMyOffer).length;
   const othersOffersCount = swapOffers.filter(o => !o.isMyOffer).length;
 
-  console.log(`💱 Final result: ${swapOffers.length} offers processed, ${filteredOffers.length} displayed`);
-  console.log(`📊 My offers: ${myOffersCount}, Others: ${othersOffersCount}`);
-
   return (
     <div className="w-full max-w-lg mx-auto">
       <Card className="bg-gray-800/50 border-gray-700">
@@ -872,15 +1031,6 @@ const SwapOffers = React.memo(({ messages, community, fetchAllMessages, debugMod
                 Swap Offers ({filteredOffers.length})
                 {debugMode && <span className="text-yellow-400 text-sm ml-2">[DEBUG]</span>}
               </CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={fetchAllMessages}
-                className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-              >
-                <RefreshCw size={14} className="mr-1" />
-                Refresh
-              </Button>
             </div>
             
             {/* Tab buttons - Updated labels to reflect new behavior */}
@@ -1170,12 +1320,8 @@ function App() {
       params.set("ascending", "false");
       params.set("pageSize", "200");
       
-      console.log("🔍 Fetching messages with params:", params.toString());
-      
       const response = await axios.get(`${SERVICE_ENDPOINT}/store/v1/messages?${params.toString()}`);
       const newMessages = response.data.messages || [];
-      
-      console.log(`📨 Retrieved ${newMessages.length} messages from store`);
       
       const sortedMessages = newMessages.sort((a: Message, b: Message) => {
         const timeA = a.timestamp ? BigInt(a.timestamp) : BigInt(0);
@@ -1214,7 +1360,7 @@ function App() {
       }
       
       // Validate format
-      if (!fullContentTopic.startsWith('/') || fullContentTopic.split('/').length < 4) {
+      if (!validateContentTopic(fullContentTopic)) {
         toast.error("Invalid content topic format. Expected: /app/version/topic/encoding");
         return;
       }
@@ -1228,10 +1374,13 @@ function App() {
         return;
       }
       
-      contentTopic = communityName === "swap-offers"
+      // Sanitize the community name to prevent breaking the content topic format
+      const sanitizedName = sanitizeCommunityName(communityName);
+      
+      contentTopic = sanitizedName === "swap-offers"
         ? "/swap-offers/1/offer/proto"
-        : `/waku/1/${communityName}/proto`;
-      displayName = communityName;
+        : `/waku/1/${sanitizedName}/proto`;
+      displayName = communityName; // Keep original name for display
     }
 
     const payload: CommunityMetadata = {
@@ -1245,6 +1394,7 @@ function App() {
       return;
     }
 
+    // Add new community to the end (newest)
     const joined = [...joinedCommunities, payload];
     setJoinedCommunities(joined);
     localStorage.setItem("communities", JSON.stringify(joined));
@@ -1264,8 +1414,7 @@ function App() {
     localStorage.setItem("community", JSON.stringify(selected));
   };
 
-  const deleteCommunity = (index: number) => (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const deleteCommunity = (index: number) => {
     const joined = joinedCommunities.filter((_, i) => i !== index);
     setJoinedCommunities(joined);
     localStorage.setItem("communities", JSON.stringify(joined));
@@ -1369,6 +1518,7 @@ function App() {
           setTempUsername={setTempUsername}
           handleSettingsSave={handleSettingsSave}
           joinedCommunities={joinedCommunities}
+          setJoinedCommunities={setJoinedCommunities}
           community={community}
           selectCommunity={selectCommunity}
           deleteCommunity={deleteCommunity}
@@ -1468,31 +1618,9 @@ function App() {
             </>
           ) : (
             <div className="w-full max-w-4xl space-y-6">
-              <div className="flex gap-2 max-w-md mx-auto">
-                <Input
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                  placeholder="Type your message here"
-                  className="bg-gray-700 border-gray-600 text-white"
-                />
-                <Button onClick={() => sendMessage()} className="bg-blue-600 hover:bg-blue-700">
-                  Send
-                </Button>
-              </div>
-              
               <Card className="bg-gray-800/50 border-gray-700">
                 <CardHeader className="flex flex-row items-center justify-between py-3">
                   <CardTitle className="text-white text-lg">Message History</CardTitle>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={fetchAllMessages}
-                    className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
-                  >
-                    <RefreshCw size={14} className="mr-1" />
-                    Refresh
-                  </Button>
                 </CardHeader>
                 <CardContent className="p-4">
                   <ScrollArea className="h-80">
@@ -1519,6 +1647,19 @@ function App() {
                   </ScrollArea>
                 </CardContent>
               </Card>
+              
+              <div className="flex gap-2 max-w-md mx-auto">
+                <Input
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+                  placeholder="Type your message here"
+                  className="bg-gray-700 border-gray-600 text-white"
+                />
+                <Button onClick={() => sendMessage()} className="bg-blue-600 hover:bg-blue-700">
+                  Send
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -1542,3 +1683,4 @@ function App() {
 }
 
 export default App;
+
