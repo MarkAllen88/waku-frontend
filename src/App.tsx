@@ -207,6 +207,48 @@ const getAssetDisplay = (asset: string): JSX.Element => {
   }
 };
 
+/**
+ * Parse amount safely from various input types
+ */
+const parseAmount = (value: any): number => {
+  if (typeof value === 'number') {
+    return isFinite(value) ? value : 0;
+  }
+  
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value);
+    return isFinite(parsed) ? parsed : 0;
+  }
+  
+  if (value && typeof value === 'object' && value.amount !== undefined) {
+    return parseAmount(value.amount);
+  }
+  
+  return 0;
+};
+
+/**
+ * Calculate exchange rate between two amounts
+ */
+const calculateRate = (fromAmount: number, toAmount: number, fromAsset: string, toAsset: string): string => {
+  if (!fromAmount || !toAmount || !isFinite(fromAmount) || !isFinite(toAmount) || fromAmount <= 0) {
+    return 'N/A';
+  }
+  
+  const rate = toAmount / fromAmount;
+  if (!isFinite(rate)) {
+    return 'N/A';
+  }
+  
+  // Format rate with appropriate decimals based on magnitude
+  let decimals = 4;
+  if (rate >= 1000) decimals = 2;
+  else if (rate >= 100) decimals = 3;
+  else if (rate < 0.0001) decimals = 8;
+  
+  return rate.toFixed(decimals);
+};
+
 // ============================================================================
 // COMPONENTS
 // ============================================================================
@@ -839,18 +881,18 @@ const processSwapOffer = (msg: Message, index: number, debugMode: boolean, usern
           toAsset = typeof offer.toAsset === 'object' && offer.toAsset.symbol
             ? offer.toAsset.symbol.toString().toUpperCase()
             : offer.toAsset?.toString().toUpperCase() || "Unknown";
-          fromAmount = offer.fromAmount !== undefined ? parseFloat(offer.fromAmount.toString()) || offer.fromAmount : "?";
-          toAmount = offer.toAmount !== undefined ? parseFloat(offer.toAmount.toString()) || offer.toAmount : "?";
+          fromAmount = parseAmount(offer.fromAmount);
+          toAmount = parseAmount(offer.toAmount);
         } else if (parsedData.from && parsedData.to) {
           fromAsset = parsedData.from.asset?.toString().toUpperCase() || "Unknown";
           toAsset = parsedData.to.asset?.toString().toUpperCase() || "Unknown";
-          fromAmount = parsedData.from.amount !== undefined ? parseFloat(parsedData.from.amount.toString()) || parsedData.from.amount : "?";
-          toAmount = parsedData.to.amount !== undefined ? parseFloat(parsedData.to.amount.toString()) || parsedData.to.amount : "?";
+          fromAmount = parseAmount(parsedData.from.amount);
+          toAmount = parseAmount(parsedData.to.amount);
         } else {
           fromAsset = parsedData.fromAsset?.toString().toUpperCase() || "Unknown";
           toAsset = parsedData.toAsset?.toString().toUpperCase() || "Unknown";
-          fromAmount = parsedData.fromAmount !== undefined ? parseFloat(parsedData.fromAmount.toString()) || parsedData.fromAmount : "?";
-          toAmount = parsedData.toAmount !== undefined ? parseFloat(parsedData.toAmount.toString()) || parsedData.toAmount : "?";
+          fromAmount = parseAmount(parsedData.fromAmount);
+          toAmount = parseAmount(parsedData.toAmount);
         }
       } else {
         // Try to find asset names in raw text
@@ -867,16 +909,16 @@ const processSwapOffer = (msg: Message, index: number, debugMode: boolean, usern
         const numberRegex = /\d+\.?\d*/g;
         const foundNumbers = payloadText.match(numberRegex);
         if (foundNumbers?.length >= 2) {
-          fromAmount = parseFloat(foundNumbers[0]) || foundNumbers[0];
-          toAmount = parseFloat(foundNumbers[1]) || foundNumbers[1];
+          fromAmount = parseAmount(foundNumbers[0]);
+          toAmount = parseAmount(foundNumbers[1]);
         } else if (foundNumbers?.length === 1) {
-          fromAmount = parseFloat(foundNumbers[0]) || foundNumbers[0];
+          fromAmount = parseAmount(foundNumbers[0]);
         }
       }
       
-      const numFromAmount = typeof fromAmount === 'number' ? fromAmount : parseFloat(fromAmount.toString()) || 0;
-      const numToAmount = typeof toAmount === 'number' ? toAmount : parseFloat(toAmount.toString()) || 0;
-      const rate = (numFromAmount > 0 && numToAmount > 0) ? (numToAmount / numFromAmount).toFixed(4) : 'N/A';
+      const numFromAmount = typeof fromAmount === 'number' ? fromAmount : parseAmount(fromAmount);
+      const numToAmount = typeof toAmount === 'number' ? toAmount : parseAmount(toAmount);
+      const rate = calculateRate(numFromAmount, numToAmount, fromAsset, toAsset);
       
       return {
         key: `${msg.timestamp ?? Date.now()}-${index}`,
@@ -916,35 +958,34 @@ const processSwapOffer = (msg: Message, index: number, debugMode: boolean, usern
         toAsset = typeof offerData.toAsset === 'object' && offerData.toAsset.symbol
           ? offerData.toAsset.symbol
           : offerData.toAsset;
-        fromAmount = offerData.fromAmount;
-        toAmount = offerData.toAmount;
+        fromAmount = parseAmount(offerData.fromAmount);
+        toAmount = parseAmount(offerData.toAmount);
       } else if (offer.from && offer.to) {
         fromAsset = offer.from.asset;
         toAsset = offer.to.asset;
-        fromAmount = offer.from.amount;
-        toAmount = offer.to.amount;
+        fromAmount = parseAmount(offer.from.amount);
+        toAmount = parseAmount(offer.to.amount);
       } else {
         fromAsset = offer.fromAsset;
         toAsset = offer.toAsset;
-        fromAmount = offer.fromAmount;
-        toAmount = offer.toAmount;
+        fromAmount = parseAmount(offer.fromAmount);
+        toAmount = parseAmount(offer.toAmount);
       }
       
-      if (!fromAsset || !toAsset || (!fromAmount && fromAmount !== 0) || (!toAmount && toAmount !== 0)) {
+      if (!fromAsset || !toAsset || !fromAmount || !toAmount) {
         return null;
       }
       
-      const numFromAmount = parseFloat(fromAmount.toString());
-      const numToAmount = parseFloat(toAmount.toString());
+      const rate = calculateRate(fromAmount, toAmount, fromAsset.toString(), toAsset.toString());
       
       return {
         key: `${msg.timestamp ?? Date.now()}-${index}`,
         fromAsset: fromAsset.toString().toUpperCase(),
-        fromAmount: numFromAmount,
+        fromAmount: fromAmount,
         toAsset: toAsset.toString().toUpperCase(),
-        toAmount: numToAmount,
+        toAmount: toAmount,
         timestamp: msg.timestamp,
-        rate: numFromAmount > 0 ? (numToAmount / numFromAmount).toFixed(4) : '0',
+        rate,
         fromDisplay: getAssetDisplay(fromAsset.toString()),
         toDisplay: getAssetDisplay(toAsset.toString()),
         rawMessage: payloadText,
@@ -1138,7 +1179,6 @@ function App() {
   const [fromAmount, setFromAmount] = useState("");
   const [toAsset, setToAsset] = useState("USDC");
   const [toAmount, setToAmount] = useState("");
-  const [lastEditedField, setLastEditedField] = useState<'from' | 'to'>('from');
   
   // Message and system state
   const [messages, setMessages] = useState<Message[]>([]);
@@ -1211,10 +1251,9 @@ function App() {
   const handleFromAmountChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setFromAmount(value);
-    setLastEditedField('from');
     
-    // Only auto-calculate if the 'to' field is empty OR if we weren't just editing the 'to' field
-    if (value && (!toAmount || lastEditedField !== 'to')) {
+    // Only auto-calculate if the 'to' field is empty
+    if (value && !toAmount) {
       const converted = calculateConversion(value, fromAsset, toAsset);
       if (converted) {
         setToAmount(converted);
@@ -1222,7 +1261,7 @@ function App() {
     } else if (!value) {
       setToAmount("");
     }
-  }, [lastEditedField, toAmount, calculateConversion, fromAsset, toAsset]);
+  }, [toAmount, calculateConversion, fromAsset, toAsset]);
 
   /**
    * Handle to amount input with auto-conversion
@@ -1230,10 +1269,9 @@ function App() {
   const handleToAmountChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setToAmount(value);
-    setLastEditedField('to');
     
-    // Only auto-calculate if the 'from' field is empty OR if we weren't just editing the 'from' field
-    if (value && (!fromAmount || lastEditedField !== 'from')) {
+    // Only auto-calculate if the 'from' field is empty
+    if (value && !fromAmount) {
       const converted = calculateConversion(value, toAsset, fromAsset);
       if (converted) {
         setFromAmount(converted);
@@ -1241,7 +1279,7 @@ function App() {
     } else if (!value) {
       setFromAmount("");
     }
-  }, [lastEditedField, fromAmount, calculateConversion, toAsset, fromAsset]);
+  }, [fromAmount, calculateConversion, toAsset, fromAsset]);
 
   // ========== DATA FETCHING ==========
   
