@@ -3,7 +3,6 @@
 ./tailwind.config.js
 ./.DS_Store
 ./Dockerfile
-./next.config.js
 ./.eslintrc.cjs
 ./docs/features.md
 ./README.md
@@ -13,6 +12,7 @@
 ./.gitignore
 ./package-lock.json
 ./package.json
+./.env
 ./.github/workflows/push.yml
 ./components.json
 ./tsconfig.json
@@ -23,7 +23,15 @@
 ./.eslintrc.json
 ./src/App.tsx
 ./src/main.tsx
+./src/.DS_Store
+./src/types.ts
+./src/components/.DS_Store
+./src/components/AssetIcon.tsx
 ./src/vite-env.d.ts
+./src/constants.ts
+./src/lib/topic.ts
 ./src/lib/utils.ts
-./src/assets/logo-waku.svg
+./src/lib/numbers.ts
+./src/lib/format.ts
+./src/lib/encoding.ts
 ./src/globals.css

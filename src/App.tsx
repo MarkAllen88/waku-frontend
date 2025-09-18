@@ -20,310 +20,65 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import axios from "axios";
 import { Settings, ArrowUpDown, TrendingUp, TrendingDown, Trash2 } from "lucide-react";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, memo, useMemo } from "react";
 import { toast } from "sonner";
 import React from "react";
 
-// ============================================================================
-// TYPE DEFINITIONS
-// ============================================================================
+// REFACTORED: Import new AssetIcon component
+import { AssetIcon } from '@/components/AssetIcon';
 
-interface Message {
-  payload: string;
-  contentTopic: string;
-  timestamp?: string;
-  meta?: string;
-  version?: number;
-}
+import type { Message, CommunityMetadata, HealthResponse, PriceData, ProcessedSwapOffer } from './types';
+import {
+  SERVICE_ENDPOINT,
+  VERIDAO_ORANGE,
+  MESSAGE_FETCH_DELAY,
+  PRICE_UPDATE_INTERVAL,
+  UPTIME_UPDATE_INTERVAL,
+  DEFAULT_PRICE_DATA,
+  // REFACTORED: Import ASSET_OPTIONS from constants
+  ASSET_OPTIONS
+} from './constants';
+import { bytesFromBase64, encodeBase64Utf8 } from './lib/encoding';
+import { formatPrice, formatChange, formatDate } from './lib/format';
+import { generateDisplayName, sanitizeCommunityName, validateContentTopic } from './lib/topic';
+import { parseAmount, calculateRate } from './lib/numbers';
 
-interface CommunityMetadata {
-  name: string;
-  contentTopic: string;
-}
-
-interface HealthResponse {
-  nodeHealth: string;
-  protocolsHealth: string[];
-}
-
-interface PriceData {
-  bitcoin: { usd: number; usd_24h_change: number };
-  ethereum: { usd: number; usd_24h_change: number };
-  "usd-coin": { usd: number; usd_24h_change: number };
-  veritaseum: { usd: number; usd_24h_change: number };
-}
-
-interface ProcessedSwapOffer {
-  key: string;
-  fromAsset: string;
-  fromAmount: number | string;
-  toAsset: string;
-  toAmount: number | string;
-  timestamp?: string;
-  rate: string;
-  fromDisplay: JSX.Element;
-  toDisplay: JSX.Element;
-  rawMessage: string;
-  isDebugMode: boolean;
-  isValidJSON: boolean;
-  originalData: any;
-  isMyOffer: boolean;
-}
 
 // ============================================================================
 // CONSTANTS AND CONFIGURATION
 // ============================================================================
 
-const SERVICE_ENDPOINT = import.meta.env.VITE_API_ENDPOINT || "http://localhost:8645";
-const VERIDAO_ORANGE = "#FF8A00";
-const MESSAGE_FETCH_DELAY = 1000; // Delay after sending message before refetch
-const PRICE_UPDATE_INTERVAL = 30000; // 30 seconds
-const UPTIME_UPDATE_INTERVAL = 1000; // 1 second
-
-// Default price data for fallback
-const DEFAULT_PRICE_DATA: PriceData = {
-  bitcoin: { usd: 66420.25, usd_24h_change: 2.34 },
-  ethereum: { usd: 3200.50, usd_24h_change: 1.87 },
-  "usd-coin": { usd: 1.00, usd_24h_change: 0.01 },
-  veritaseum: { usd: 0.1234, usd_24h_change: -3.45 }
-};
+// REFACTORED: The ASSET_OPTIONS constant has been moved to src/constants.ts
 
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
-/**
- * UTF-8 safe base64 encoding/decoding utilities
- */
-const bytesFromBase64 = (b64: string): Uint8Array =>
-  Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-
-const base64FromBytes = (bytes: Uint8Array): string => {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-};
-
-const encodeBase64Utf8 = (text: string): string => {
-  const bytes = new TextEncoder().encode(text);
-  return base64FromBytes(bytes);
-};
-
-/**
- * Format price with specified decimal places
- */
-const formatPrice = (price: number | null | undefined, decimals: number = 2): string => {
-  if (price == null) return "0.00";
-  return price.toLocaleString(undefined, {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
-  });
-};
-
-/**
- * Format price change percentage with sign
- */
-const formatChange = (change: number | null | undefined): string => {
-  if (change == null) return "0.00";
-  return (change >= 0 ? '+' : '') + change.toFixed(2);
-};
-
-/**
- * Format timestamp from nanoseconds to human readable
- */
-const formatDate = (timestamp?: string): string => {
-  try {
-    if (!timestamp) return "";
-    const ns = BigInt(timestamp);
-    const ms = Number(ns / 1000000n);
-    return new Date(ms).toLocaleString();
-  } catch {
-    return "";
-  }
-};
-
-/**
- * Generate display name from content topic
- */
-const generateDisplayName = (contentTopic: string): string => {
-  try {
-    const parts = contentTopic.split('/');
-    if (parts.length < 4) return contentTopic;
-    
-    const app = parts[1];
-    const topic = parts[3];
-    
-    // Special cases for common patterns
-    if (app === 'waku' && topic === 'default-content') return 'waku';
-    if (app === 'status') return 'status';
-    
-    // For apps with multiple topics, include the topic name
-    if (topic !== 'proto' && topic !== app && topic !== 'default') {
-      return `${app}/${topic}`;
-    }
-    
-    return app;
-  } catch {
-    return contentTopic;
-  }
-};
-
-/**
- * Sanitize community names for content topic format
- */
-const sanitizeCommunityName = (name: string): string => {
-  return name.replace(/\s+/g, '-').replace(/[\/\\:*?"<>|]/g, '-');
-};
-
-/**
- * Validate content topic format
- */
-const validateContentTopic = (topic: string): boolean => {
-  if (!topic.startsWith('/')) return false;
-  const parts = topic.split('/');
-  return parts.length === 4 && parts[1] && parts[2] && parts[3];
-};
-
-/**
- * Get asset display component based on asset type
- */
-const getAssetDisplay = (asset: string): JSX.Element => {
-  const assetUpper = asset.toString().toUpperCase();
-  switch (assetUpper) {
-    case 'BTC':
-    case 'BITCOIN':
-      return <div className="w-4 h-4 bg-orange-500 rounded-full" />;
-    case 'ETH':
-    case 'ETHEREUM':
-      return <div className="w-4 h-4 bg-gray-400 rounded-full" />;
-    case 'USDC':
-    case 'USD':
-      return <div className="w-4 h-4 bg-blue-500 rounded-full" />;
-    case 'VERI':
-    case 'VERITASEUM':
-      return <img src="https://activate.veri.vip/favicon.svg" alt="VERI" className="w-4 h-4" />;
-    default:
-      return <div className="w-4 h-4 bg-gray-500 rounded-full" />;
-  }
-};
-
-/**
- * Parse amount safely from various input types
- */
-const parseAmount = (value: any): number => {
-  if (typeof value === 'number') {
-    return isFinite(value) ? value : 0;
-  }
-  
-  if (typeof value === 'string') {
-    const parsed = parseFloat(value);
-    return isFinite(parsed) ? parsed : 0;
-  }
-  
-  if (value && typeof value === 'object' && value.amount !== undefined) {
-    return parseAmount(value.amount);
-  }
-  
-  return 0;
-};
-
-/**
- * Calculate exchange rate between two amounts
- */
-const calculateRate = (fromAmount: number, toAmount: number, fromAsset: string, toAsset: string): string => {
-  if (!fromAmount || !toAmount || !isFinite(fromAmount) || !isFinite(toAmount) || fromAmount <= 0) {
-    return 'N/A';
-  }
-  
-  const rate = toAmount / fromAmount;
-  if (!isFinite(rate)) {
-    return 'N/A';
-  }
-  
-  // Format rate with appropriate decimals based on magnitude
-  let decimals = 4;
-  if (rate >= 1000) decimals = 2;
-  else if (rate >= 100) decimals = 3;
-  else if (rate < 0.0001) decimals = 8;
-  
-  return rate.toFixed(decimals);
-};
+// REFACTORED: The getAssetDisplay function has been removed.
+// The new <AssetIcon /> component now handles this logic.
 
 // ============================================================================
 // COMPONENTS
 // ============================================================================
 
 /**
- * Scrolling Price Bar Component
+ * Scrolling Price Bar Component - Memoized
  * Displays real-time cryptocurrency prices with 24h changes
  */
 type PriceBarProps = { priceData: PriceData };
-const PriceBar = React.memo(({ priceData }: PriceBarProps) => (
-  <>
-    <style>{`
-      @keyframes scroll {
-        0% { transform: translateX(0); }
-        100% { transform: translateX(-50%); }
-      }
-      .animate-scroll {
-        animation: scroll 30s linear infinite;
-      }
-    `}</style>
-    <div className="fixed top-0 left-0 right-0 bg-gray-800 border-b border-gray-700 p-3 z-40 overflow-hidden">
-      <div className="animate-scroll whitespace-nowrap">
-        <div className="inline-flex gap-8">
-          {/* Render price items twice for seamless scroll */}
-          {[...Array(2)].map((_, setIndex) => (
-            <React.Fragment key={setIndex}>
-              <PriceItem
-                icon={<div className="w-4 h-4 bg-orange-500 rounded-full" />}
-                name="Bitcoin"
-                price={priceData.bitcoin?.usd}
-                change={priceData.bitcoin?.usd_24h_change}
-              />
-              <PriceItem
-                icon={<div className="w-4 h-4 bg-gray-400 rounded-full" />}
-                name="Ethereum"
-                price={priceData.ethereum?.usd}
-                change={priceData.ethereum?.usd_24h_change}
-              />
-              <PriceItem
-                icon={<div className="w-4 h-4 bg-blue-500 rounded-full" />}
-                name="USDC"
-                price={priceData["usd-coin"]?.usd}
-                change={priceData["usd-coin"]?.usd_24h_change}
-                decimals={4}
-              />
-              <PriceItem
-                icon={<img src="https://activate.veri.vip/favicon.svg" alt="VERI" className="w-4 h-4" />}
-                name="VERI"
-                price={priceData.veritaseum?.usd}
-                change={priceData.veritaseum?.usd_24h_change}
-                decimals={4}
-              />
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-    </div>
-  </>
-));
 
-/**
- * Individual price item component
- */
-interface PriceItemProps {
-  icon: JSX.Element;
+// REFACTORED: PriceItem now accepts an assetId string instead of a JSX icon element.
+const PriceItem: React.FC<{
+  assetId: string;
   name: string;
   price?: number;
   change?: number;
   decimals?: number;
-}
-
-const PriceItem: React.FC<PriceItemProps> = ({ icon, name, price, change, decimals = 2 }) => (
+}> = memo(({ assetId, name, price, change, decimals = 2 }) => (
   <div className="flex items-center gap-3">
     <div className="flex items-center gap-2">
-      {icon}
+      {/* REFACTORED: Use the AssetIcon component */}
+      <AssetIcon assetId={assetId} />
       <span className="text-white font-medium text-sm">{name}</span>
     </div>
     <div className="text-white font-bold">${formatPrice(price, decimals)}</div>
@@ -332,10 +87,82 @@ const PriceItem: React.FC<PriceItemProps> = ({ icon, name, price, change, decima
       <span className="text-xs">{formatChange(change)}%</span>
     </div>
   </div>
-);
+));
+
+PriceItem.displayName = 'PriceItem';
+
+const PriceBar = memo(({ priceData }: PriceBarProps) => {
+  // REFACTORED: priceItems now use `assetId` instead of a hardcoded `icon`.
+  const priceItems = useMemo(() => [
+    {
+      assetId: "BTC",
+      name: "Bitcoin",
+      price: priceData.bitcoin?.usd,
+      change: priceData.bitcoin?.usd_24h_change
+    },
+    {
+      assetId: "ETH",
+      name: "Ethereum",
+      price: priceData.ethereum?.usd,
+      change: priceData.ethereum?.usd_24h_change
+    },
+    {
+      assetId: "USDC",
+      name: "USDC",
+      price: priceData["usd-coin"]?.usd,
+      change: priceData["usd-coin"]?.usd_24h_change,
+      decimals: 4
+    },
+    {
+      assetId: "VERI",
+      name: "VERI",
+      price: priceData.veritaseum?.usd,
+      change: priceData.veritaseum?.usd_24h_change,
+      decimals: 4
+    }
+  ], [priceData]);
+
+  return (
+    <>
+      <style>{`
+        @keyframes scroll {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-scroll {
+          animation: scroll 30s linear infinite;
+        }
+      `}</style>
+      <div className="fixed top-0 left-0 right-0 bg-gray-800 border-b border-gray-700 p-3 z-40 overflow-hidden">
+        <div className="animate-scroll whitespace-nowrap">
+          <div className="inline-flex gap-8">
+            {/* Render price items twice for seamless scroll */}
+            {[...Array(2)].map((_, setIndex) => (
+              <React.Fragment key={setIndex}>
+                {priceItems.map((item, index) => (
+                  <PriceItem
+                    key={`${setIndex}-${index}`}
+                    // REFACTORED: Pass assetId to the PriceItem component
+                    assetId={item.assetId}
+                    name={item.name}
+                    price={item.price}
+                    change={item.change}
+                    decimals={item.decimals}
+                  />
+                ))}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+});
+
+PriceBar.displayName = 'PriceBar';
 
 /**
- * Right Sidebar Component
+ * Right Sidebar Component - Memoized
  * Contains user settings, community management, and configuration options
  */
 interface RightSidebarProps {
@@ -362,7 +189,7 @@ interface RightSidebarProps {
   setFullContentTopic: (v: string) => void;
 }
 
-const RightSidebar = React.memo((props: RightSidebarProps) => {
+const RightSidebar = memo((props: RightSidebarProps) => {
   const {
     username, settingsOpen, setSettingsOpen, tempUsername, setTempUsername, handleSettingsSave,
     joinedCommunities, setJoinedCommunities, community, selectCommunity, deleteCommunity,
@@ -705,8 +532,10 @@ const RightSidebar = React.memo((props: RightSidebarProps) => {
   );
 });
 
+RightSidebar.displayName = 'RightSidebar';
+
 /**
- * Asset Swap Interface Component
+ * Asset Swap Interface Component - Memoized
  * Handles creation of swap offers with price conversion
  */
 interface SwapInterfaceProps {
@@ -722,20 +551,23 @@ interface SwapInterfaceProps {
   sendSwapOffer: () => void;
 }
 
-const SwapInterface = React.memo((props: SwapInterfaceProps) => {
+const SwapInterface = memo((props: SwapInterfaceProps) => {
   const {
     fromAsset, setFromAsset, fromAmount, handleFromAmountChange,
     toAsset, setToAsset, toAmount, handleToAmountChange,
     swapAssets, sendSwapOffer
   } = props;
 
-  // Asset options for select dropdowns
-  const assetOptions = [
-    { value: "BTC", icon: <div className="w-3 h-3 bg-orange-500 rounded-full" />, label: "BTC" },
-    { value: "ETH", icon: <div className="w-3 h-3 bg-gray-400 rounded-full" />, label: "ETH" },
-    { value: "USDC", icon: <div className="w-3 h-3 bg-blue-500 rounded-full" />, label: "USDC" },
-    { value: "VERI", icon: <img src="https://activate.veri.vip/favicon.svg" alt="VERI" className="w-3 h-3" />, label: "VERI" }
-  ];
+  // REFACTORED: assetSelectOptions now uses AssetIcon component
+  const assetSelectOptions = useMemo(() =>
+    ASSET_OPTIONS.map(option => (
+      <SelectItem key={option.value} value={option.value}>
+        <div className="flex items-center gap-2">
+          <AssetIcon assetId={option.value} className="w-3 h-3" />
+          {option.label}
+        </div>
+      </SelectItem>
+    )), []);
 
   return (
     <div className="w-full max-w-lg mx-auto">
@@ -753,14 +585,7 @@ const SwapInterface = React.memo((props: SwapInterfaceProps) => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-gray-700 border-gray-600">
-                  {assetOptions.map(option => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <div className="flex items-center gap-2">
-                        {option.icon}
-                        {option.label}
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {assetSelectOptions}
                 </SelectContent>
               </Select>
               <Input
@@ -790,14 +615,7 @@ const SwapInterface = React.memo((props: SwapInterfaceProps) => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-gray-700 border-gray-600">
-                  {assetOptions.map(option => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <div className="flex items-center gap-2">
-                        {option.icon}
-                        {option.label}
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {assetSelectOptions}
                 </SelectContent>
               </Select>
               <Input
@@ -827,6 +645,8 @@ const SwapInterface = React.memo((props: SwapInterfaceProps) => {
     </div>
   );
 });
+
+SwapInterface.displayName = 'SwapInterface';
 
 /**
  * Process swap offer message into structured data
@@ -898,28 +718,30 @@ const processSwapOffer = (msg: Message, index: number, debugMode: boolean, usern
         // Try to find asset names in raw text
         const assetRegex = /(BTC|ETH|USDC|VERI|bitcoin|ethereum|Bitcoin|Ethereum)/gi;
         const foundAssets = payloadText.match(assetRegex);
-        if (foundAssets?.length >= 2) {
+        if (foundAssets && foundAssets.length >= 2) {
           fromAsset = foundAssets[0].toUpperCase();
           toAsset = foundAssets[1].toUpperCase();
-        } else if (foundAssets?.length === 1) {
+        } else if (foundAssets && foundAssets.length === 1) {
           fromAsset = foundAssets[0].toUpperCase();
         }
-        
+          
         // Try to find numbers that might be amounts
         const numberRegex = /\d+\.?\d*/g;
         const foundNumbers = payloadText.match(numberRegex);
-        if (foundNumbers?.length >= 2) {
+        if (foundNumbers && foundNumbers.length >= 2) {
           fromAmount = parseAmount(foundNumbers[0]);
           toAmount = parseAmount(foundNumbers[1]);
-        } else if (foundNumbers?.length === 1) {
+        } else if (foundNumbers && foundNumbers.length === 1) {
           fromAmount = parseAmount(foundNumbers[0]);
         }
+
       }
       
       const numFromAmount = typeof fromAmount === 'number' ? fromAmount : parseAmount(fromAmount);
       const numToAmount = typeof toAmount === 'number' ? toAmount : parseAmount(toAmount);
-      const rate = calculateRate(numFromAmount, numToAmount, fromAsset, toAsset);
-      
+      const rate = calculateRate(numFromAmount, numToAmount);
+
+      // REFACTORED: Removed fromDisplay and toDisplay. The rendering component will handle this.
       return {
         key: `${msg.timestamp ?? Date.now()}-${index}`,
         fromAsset: fromAsset.toString(),
@@ -928,8 +750,6 @@ const processSwapOffer = (msg: Message, index: number, debugMode: boolean, usern
         toAmount: toAmount,
         timestamp: msg.timestamp,
         rate,
-        fromDisplay: getAssetDisplay(fromAsset),
-        toDisplay: getAssetDisplay(toAsset),
         rawMessage: payloadText,
         isDebugMode: true,
         isValidJSON,
@@ -976,8 +796,9 @@ const processSwapOffer = (msg: Message, index: number, debugMode: boolean, usern
         return null;
       }
       
-      const rate = calculateRate(fromAmount, toAmount, fromAsset.toString(), toAsset.toString());
-      
+      const rate = calculateRate(fromAmount, toAmount);
+
+      // REFACTORED: Removed fromDisplay and toDisplay. The rendering component will handle this.
       return {
         key: `${msg.timestamp ?? Date.now()}-${index}`,
         fromAsset: fromAsset.toString().toUpperCase(),
@@ -986,8 +807,6 @@ const processSwapOffer = (msg: Message, index: number, debugMode: boolean, usern
         toAmount: toAmount,
         timestamp: msg.timestamp,
         rate,
-        fromDisplay: getAssetDisplay(fromAsset.toString()),
-        toDisplay: getAssetDisplay(toAsset.toString()),
         rawMessage: payloadText,
         isDebugMode: false,
         isValidJSON: true,
@@ -1005,7 +824,7 @@ const processSwapOffer = (msg: Message, index: number, debugMode: boolean, usern
 };
 
 /**
- * Swap Offers Display Component
+ * Swap Offers Display Component - Memoized
  * Shows filtered swap offers with tabs for "All" and "My Offers"
  */
 interface SwapOffersProps {
@@ -1015,23 +834,29 @@ interface SwapOffersProps {
   username: string;
 }
 
-const SwapOffers = React.memo(({ messages, community, debugMode, username }: SwapOffersProps) => {
+const SwapOffers = memo(({ messages, community, debugMode, username }: SwapOffersProps) => {
   const [activeTab, setActiveTab] = useState<'all' | 'mine'>('all');
   
-  // Process messages into swap offers
-  const swapOffers = messages
-    .filter(msg => msg.contentTopic === community?.contentTopic)
-    .map((msg, index) => processSwapOffer(msg, index, debugMode, username))
-    .filter((offer): offer is ProcessedSwapOffer => offer !== null);
+  // Process messages into swap offers - memoized for performance
+  const swapOffers = useMemo(() =>
+    messages
+      .filter(msg => msg.contentTopic === community?.contentTopic)
+      .map((msg, index) => processSwapOffer(msg, index, debugMode, username))
+      .filter((offer): offer is ProcessedSwapOffer => offer !== null),
+    [messages, community?.contentTopic, debugMode, username]
+  );
 
-  // Filter offers based on active tab
-  const filteredOffers = activeTab === 'mine'
-    ? swapOffers.filter(offer => offer.isMyOffer)
-    : swapOffers.filter(offer => !offer.isMyOffer);
-
-  // Count offers for tab labels
-  const myOffersCount = swapOffers.filter(o => o.isMyOffer).length;
-  const othersOffersCount = swapOffers.filter(o => !o.isMyOffer).length;
+  // Filter offers based on active tab - memoized
+  const { filteredOffers, myOffersCount, othersOffersCount } = useMemo(() => {
+    const myOffers = swapOffers.filter(offer => offer.isMyOffer);
+    const othersOffers = swapOffers.filter(offer => !offer.isMyOffer);
+    
+    return {
+      filteredOffers: activeTab === 'mine' ? myOffers : othersOffers,
+      myOffersCount: myOffers.length,
+      othersOffersCount: othersOffers.length
+    };
+  }, [swapOffers, activeTab]);
 
   return (
     <div className="w-full max-w-lg mx-auto">
@@ -1078,7 +903,7 @@ const SwapOffers = React.memo(({ messages, community, debugMode, username }: Swa
         <CardContent className="p-4">
           {filteredOffers.length === 0 ? (
             <div className="text-center py-8">
-              <div className="text-4xl mb-3">📭</div>
+              <div className="text-4xl mb-3">����</div>
               <h3 className="text-lg font-semibold text-white mb-1">
                 {activeTab === 'mine' ? 'No offers created' : 'No offers available'}
               </h3>
@@ -1107,15 +932,16 @@ const SwapOffers = React.memo(({ messages, community, debugMode, username }: Swa
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
+                        {/* REFACTORED: Use AssetIcon component for rendering offer icons */}
                         <div className="flex items-center gap-2">
-                          {offer.fromDisplay}
+                          <AssetIcon assetId={offer.fromAsset} />
                           <span className="font-medium text-white text-sm">
                             {offer.fromAmount} {offer.fromAsset}
                           </span>
                         </div>
                         <ArrowUpDown size={14} className="text-gray-400" />
                         <div className="flex items-center gap-2">
-                          {offer.toDisplay}
+                          <AssetIcon assetId={offer.toAsset} />
                           <span className="font-medium text-white text-sm">
                             {offer.toAmount} {offer.toAsset}
                           </span>
@@ -1132,7 +958,7 @@ const SwapOffers = React.memo(({ messages, community, debugMode, username }: Swa
                           )}
                           {offer.isDebugMode && (
                             <>
-                              <span className="text-gray-400">•</span>
+                              <span className="text-gray-400">��</span>
                               <span className={offer.isValidJSON ? "text-green-400" : "text-yellow-400"}>
                                 {offer.isValidJSON ? "JSON" : "RAW"}
                               </span>
@@ -1151,6 +977,8 @@ const SwapOffers = React.memo(({ messages, community, debugMode, username }: Swa
     </div>
   );
 });
+
+SwapOffers.displayName = 'SwapOffers';
 
 // ============================================================================
 // MAIN APPLICATION COMPONENT
@@ -1219,7 +1047,7 @@ function App() {
   // ========== PRICE CONVERSION LOGIC ==========
   
   /**
-   * Calculate conversion between assets using current price data
+   * Calculate conversion between assets using current price data - memoized
    */
   const calculateConversion = useCallback((amount: string, fromAssetType: string, toAssetType: string): string => {
     if (!amount) return "";
@@ -1284,13 +1112,14 @@ function App() {
   // ========== DATA FETCHING ==========
   
   /**
-   * Fetch cryptocurrency prices from CoinGecko API
-   */
+  * Fetch cryptocurrency prices from CoinGecko API - memoized
+  */
   const fetchPrices = useCallback(async () => {
     try {
+      // UPDATED: This now fetches prices through your local Nginx proxy.
       const response = await axios.get(
-        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,veritaseum&vs_currencies=usd&include_24hr_change=true',
-        { timeout: 10000 }
+        `${SERVICE_ENDPOINT}/coingecko/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,veritaseum&vs_currencies=usd&include_24hr_change=true`,
+          { timeout: 10000 }
       );
       setPriceData(prevData => ({
         bitcoin: response.data.bitcoin || prevData.bitcoin,
@@ -1299,12 +1128,12 @@ function App() {
         veritaseum: response.data.veritaseum || prevData.veritaseum
       }));
     } catch (error) {
-      console.warn("Failed to fetch prices:", error);
+      console.warn("Failed to fetch prices:", error); // Changed to warn to reduce console noise
     }
   }, []);
 
   /**
-   * Fetch system information (version, health, peers)
+   * Fetch system information (version, health, peers) - memoized
    */
   const fetchSystemData = useCallback(async () => {
     try {
@@ -1322,7 +1151,7 @@ function App() {
   }, []);
 
   /**
-   * Fetch all messages for joined communities
+   * Fetch all messages for joined communities - memoized
    */
   const fetchAllMessages = useCallback(async () => {
     try {
@@ -1567,7 +1396,7 @@ function App() {
   }, [tempUsername, username, debugMode, advancedMode]);
 
   /**
-   * Get health indicator emoji based on node health
+   * Get health indicator emoji based on node health - memoized
    */
   const getHealthIndicator = useCallback(() => {
     if (!health) return "🔴";
@@ -1703,7 +1532,7 @@ function App() {
                   <ScrollArea className="h-80">
                     <div className="space-y-2">
                       {messages
-                        .filter(msg => msg.contentTopic === community.contentTopic)
+                        .filter(msg => msg.contentTopic === community?.contentTopic)
                         .map((msg, index) => {
                           try {
                             const rawBytes = bytesFromBase64(msg.payload);
