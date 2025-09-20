@@ -24,6 +24,7 @@
 ./src/App.tsx
 ./src/main.tsx
 ./src/.DS_Store
+./src/proto/.DS_Store
 ./src/types.ts
 ./src/components/.DS_Store
 ./src/components/AssetIcon.tsx
